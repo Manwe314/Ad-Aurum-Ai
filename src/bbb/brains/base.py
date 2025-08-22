@@ -2,11 +2,19 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 import math, random
-from ..models import Card, GladiatorType
+from ..models import Card, GladiatorType, Battle
 from ..observations import PlayerView
 from colorama import Fore, Back, Style
 from .utils import estimate_future_representation_open_lane
-from ..globals import ADDITIONAL_INFO, TARGET_PLAYER, NUMBER_OF_BATTLES, NUM_PLAYERS
+from ..globals import ADDITIONAL_INFO, TARGET_PLAYER, NUMBER_OF_BATTLES, NUM_PLAYERS, FOCUS_ON_BET_SIZING
+from collections import Counter
+from typing import Iterable
+from enum import Enum as _Enum
+
+class TDIntent(_Enum):
+    NOW = 1
+    LATER = 2
+    NONE = 3
 
 # -------- Traits --------
 @dataclass(frozen=True)
@@ -19,7 +27,7 @@ class Traits:
     domination_drive: int = 50     # weight of 3/3 dominance goal
     herding: int = 50              # tendency to follow board multipliers
     ev_adherence: int = 50         # 0: vibes, 100: strict EV
-    exploration: int = 10          # random exploration
+    exploration: int = 3          # random exploration
 
 THREE_X_CHAIN = [GladiatorType.A, GladiatorType.B, GladiatorType.C, GladiatorType.D, GladiatorType.E]
 TWO_X_CHAIN   = [GladiatorType.A, GladiatorType.C, GladiatorType.E, GladiatorType.B, GladiatorType.D]
@@ -46,6 +54,52 @@ def _softmax_pick(scores: Dict[GladiatorType, float], rng: random.Random, temper
         if r <= acc:
             return t
     return next(iter(scores))  # fallback
+
+
+    
+
+
+
+
+
+
+class DeckMemory:
+    """
+    Tracks remaining unseen cards globally from this player's perspective.
+    Start with full deck; remove your hand and any revealed cards as game proceeds.
+    """
+    ALL_VALUES = [1,3,5,5,7,7,9,10,11]
+
+    def __init__(self):
+        self.remaining = Counter()
+        for t in GladiatorType:
+            for v in self.ALL_VALUES:
+                self.remaining[(t, v)] += 1
+
+    def remove_cards(self, cards: Iterable[Card]):
+        for c in cards:
+            self.remaining[(c.type, c.number)] = max(0, self.remaining[(c.type, c.number)] - 1)
+
+    def count_total(self) -> int:
+        return sum(self.remaining.values())
+
+    def possible_given_shown(self, *, shown_type: GladiatorType | None, shown_number: int | None) -> list[tuple[GladiatorType,int,int]]:
+        """
+        Returns list of (type, number, count) that match the partial info:
+        - if shown_type is set, restrict to that type
+        - if shown_number is set, restrict to that number
+        """
+        out = []
+        for (t, v), cnt in self.remaining.items():
+            if cnt <= 0:
+                continue
+            if shown_type is not None and t != shown_type:
+                continue
+            if shown_number is not None and v != shown_number:
+                continue
+            out.append((t, v, cnt))
+        return out
+
 
 
 # -------- Brain interface --------
@@ -146,8 +200,8 @@ class PlayerBrain:
             s += ww_open * open_lane_bonus[t]
             s -= ww_bluff  * deception_penalty[t]
             scores[t] = s
-
-        print(f"Scores for {view.me}: {scores}")
+        if FOCUS_ON_BET_SIZING:
+            print(f"Scores for {view.me}: {scores}")
 
         # --- Exploration: sometimes try something else entirely ---
         if rng.random() < (traits.exploration / 100.0):
@@ -246,8 +300,8 @@ class PlayerBrain:
             gain =  Btot_star - BT_star - a
             ww_round = 0.96                              # small weight; tune if needed
             s = ww_round * gain
-
-            print(Back.MAGENTA + Fore.LIGHTGREEN_EX + f"{view.me} a={a}: gain={gain}" + Style.RESET_ALL)
+            if FOCUS_ON_BET_SIZING:
+                print(Back.MAGENTA + Fore.LIGHTGREEN_EX + f"{view.me} a={a}: gain={gain}" + Style.RESET_ALL)
 
             # ========= 2) BATTLE EV (inverted-U via concede) =========
             # Inputs for this type in our hand
@@ -278,8 +332,8 @@ class PlayerBrain:
             battle_ev = NT_eff * Vavg * (p_win * (1.0 - p_concede)) * baseline_pot
             ww_battle = 0.8  # reduce impact so it doesn’t swamp costs
             s += ww_battle * battle_ev
-
-            print(Back.MAGENTA + Fore.LIGHTGREEN_EX + f"{view.me} a={a}: Δ={Δ:.2f} p_win={p_win:.2f} p_conc={p_concede:.2f} battleEV={battle_ev:.2f}" + Style.RESET_ALL)
+            if FOCUS_ON_BET_SIZING:
+                print(Back.MAGENTA + Fore.LIGHTGREEN_EX + f"{view.me} a={a}: Δ={Δ:.2f} p_win={p_win:.2f} p_conc={p_concede:.2f} battleEV={battle_ev:.2f}" + Style.RESET_ALL)
 
             # ========= 3) DOMINATION EV =========
             # How many domination opportunities do we plausibly have this round from this type?
@@ -305,7 +359,8 @@ class PlayerBrain:
                 dom_ev = opportunities * p3 * S2
                 ww_dom = 0.50  # capped impact
                 s += ww_dom * dom_ev
-                print(Back.MAGENTA + Fore.LIGHTGREEN_EX + f"{view.me} a={a}: dom opp={opportunities} p3={p3:.2f} S2={S2:.2f} domEV={dom_ev:.2f}" + Style.RESET_ALL)
+                if FOCUS_ON_BET_SIZING:
+                    print(Back.MAGENTA + Fore.LIGHTGREEN_EX + f"{view.me} a={a}: dom opp={opportunities} p3={p3:.2f} S2={S2:.2f} domEV={dom_ev:.2f}" + Style.RESET_ALL)
 
             # ========= 4) COSTS: explicit spend + reserve penalty =========
             #  Liquidity/reserve: steep penalty if 'a' starves equalization/battle bets
@@ -317,19 +372,20 @@ class PlayerBrain:
             reserve_penalty = (2.0 + 2.0 * (self.traits.ev_adherence / 100.0)) * short
             ww_liquidty = 0.8
             s -= (lam * a + reserve_penalty) * ww_liquidty
-
-            print(Back.MAGENTA + Fore.LIGHTGREEN_EX + f"{view.me} a={a}: liq={lam*a:.2f} reserve_penalty={reserve_penalty:.2f}" + Style.RESET_ALL)
+            if FOCUS_ON_BET_SIZING:
+                print(Back.MAGENTA + Fore.LIGHTGREEN_EX + f"{view.me} a={a}: liq={lam*a:.2f} reserve_penalty={reserve_penalty:.2f}" + Style.RESET_ALL)
 
             # ========= 5) Aggressiveness: concave boost (optional, small) =========
             theta = 0.10  # smaller; concave in 'a'
             s += theta * (self.traits.aggressiveness / 100.0) * math.sqrt(a)
-
-            print(Back.MAGENTA + Fore.LIGHTGREEN_EX + f"{view.me} a={a}: final score={s:.2f}" + Style.RESET_ALL)
+            if FOCUS_ON_BET_SIZING:
+                print(Back.MAGENTA + Fore.LIGHTGREEN_EX + f"{view.me} a={a}: final score={s:.2f}" + Style.RESET_ALL)
 
             scores[a] = s
 
         # Exploration?
-        #print(Back.MAGENTA + Fore.LIGHTGREEN_EX + f"Scores for {view.me} with type {chosen_type}: {scores}" + Style.RESET_ALL)
+        if FOCUS_ON_BET_SIZING:
+            print(Back.MAGENTA + Fore.LIGHTGREEN_EX + f"Scores for {view.me} with type {chosen_type}: {scores}" + Style.RESET_ALL)
         if self.rng.random() < (self.traits.exploration / 100.0):
             return self.rng.randint(1, behind)
 
@@ -338,33 +394,345 @@ class PlayerBrain:
         a_choice = _softmax_pick(scores, self.rng, temperature)
         return max(1, min(behind, int(a_choice)))
 
+    def _multiplier(self, a: GladiatorType, b: GladiatorType) -> int:
+        i3 = THREE_X_CHAIN.index(a)
+        if THREE_X_CHAIN[(i3 + 1) % 5] == b:
+            return 3
+        i2 = TWO_X_CHAIN.index(a)
+        if TWO_X_CHAIN[(i2 + 1) % 5] == b:
+            return 2
+        return 1
 
-   
-   
-   
-   
-   
-   
-   
-   
-   
-   
-   
-   
-   
+    def _card_strength(self, card: Card, board_totals: dict[GladiatorType,int]) -> int:
+        return card.number * board_totals.get(card.type, 0)
+
+    def _win_lose_stats(
+        self,
+        my_card: Card,
+        opp_candidates: list[tuple[GladiatorType,int,int]],
+        board_totals: dict[GladiatorType,int]
+    ) -> tuple[int,int,int,int]:
+        """
+        Returns (wins, losses, total, sum_winning_values).
+        - wins/losses/total count opponent-card multiplicities (cnt).
+        - sum_winning_values accumulates the *opponent card numbers we beat* (weighted by cnt).
+          This will let us compute avg value captured when we win.
+        """
+        wins = losses = total = 0
+        sum_win_vals = 0
+        my_base = self._card_strength(my_card, board_totals)
+
+        for (t,v,cnt) in opp_candidates:
+            opp_base = v * board_totals.get(t, 0)
+            dom_me   = self._multiplier(my_card.type, t)
+            dom_opp  = self._multiplier(t, my_card.type)
+            s_me  = my_base * max(dom_me, 1)
+            s_opp = opp_base * max(dom_opp, 1)
+
+            if s_me > s_opp:
+                wins += cnt
+                sum_win_vals += v * cnt  # value of card we would take when we win
+            elif s_opp > s_me:
+                losses += cnt
+            total += cnt
+
+        return wins, losses, total, sum_win_vals
+
+    def _ev_card_value(self, my_card: Card, opp_candidates, board_totals) -> float:
+        """
+        EV ≈ p_win * avg(value of cards we beat)  -  p_lose * my_card.number
+        (ties ignored)
+        """
+        wins, losses, total, sum_win_vals = self._win_lose_stats(my_card, opp_candidates, board_totals)
+        if total == 0:
+            return 0.0
+        p_win  = wins   / total
+        p_lose = losses / total
+        avg_win_val = (sum_win_vals / wins) if wins > 0 else 0.0
+        return (p_win * avg_win_val) - (p_lose * my_card.number)
+
+    def _opponent_rep_type(self, opp_name: str, board_raw_bets: dict[GladiatorType, list[tuple[str,int]]]) -> GladiatorType | None:
+        # Scan board for (player_name, amount) entries; return the type they bet on.
+        for gtype, entries in board_raw_bets.items():
+            for pname, _amt in entries:
+                if pname == opp_name:
+                    return gtype
+        return None
+
+    def _decide_td_intent(self, view: "PlayerView", battles: list["Battle"], memory: "DeckMemory") -> tuple[TDIntent, float]:
+        """
+        Score feasibility to 3-0 with current board and partial info.
+        Return (intent, intent_strength in [0,1]).
+        """
+        board_totals = view.board.total_bets_by_type
+        my_cards = list(view.my_hand.cards)
+
+        # For each battle, compute the best EV if we play NOW
+        battle_scores: list[float] = []
+        for b in battles:
+            if b.player1.name == view.me:
+                opp_shown_type  = b.card2.type if (b.card2 is not None and b.card2_shows_type) else None
+                opp_shown_value = b.card2.number if (b.card2 is not None and not b.card2_shows_type) else None
+            else:
+                opp_shown_type  = b.card1.type if (b.card1 is not None and b.card1_shows_type) else None
+                opp_shown_value = b.card1.number if (b.card1 is not None and not b.card1_shows_type) else None
+
+            opp_cands = memory.possible_given_shown(shown_type=opp_shown_type, shown_number=opp_shown_value)
+
+            best = 0.0
+            for c in my_cards:
+                ev = self._ev_card_value(c, opp_cands, board_totals)
+                if ev > best:
+                    best = ev
+            battle_scores.append(best)
+
+        top3 = sorted(battle_scores, reverse=True)[:3]
+        raw = sum(max(0.0, x) for x in top3)
+        norm = min(1.0, raw / 30.0)  # scale to [0,1] roughly
+
+        # --- weights (ww_*) ---
+        ww_td_norm_now   = 2.0
+        ww_td_drive      = 0.8
+        ww_td_tempo      = 0.6
+        ww_td_norm_later = 1.2
+        ww_td_drive_lat  = 0.5
+        ww_td_tempo_lat  = 0.8
+        ww_td_none_k     = 0.6  # how much (1-norm) favors NONE
+
+        drive = self.traits.domination_drive / 100.0
+        tempo = self.traits.tempo / 100.0
+
+        logit_now   =  ww_td_norm_now * norm + ww_td_drive * drive + ww_td_tempo * tempo
+        logit_later =  ww_td_norm_later * norm + ww_td_drive_lat * drive + ww_td_tempo_lat * (1.0 - tempo)
+        logit_none  =  ww_td_none_k * (1.0 - norm)
+
+        m = max(logit_now, logit_later, logit_none)
+        ex = [math.exp(logit_now - m), math.exp(logit_later - m), math.exp(logit_none - m)]
+        Z = sum(ex)
+        p_now, p_later, p_none = (ex[0]/Z, ex[1]/Z, ex[2]/Z)
+
+        r = self.rng.random()
+        if r < p_now:
+            return TDIntent.NOW, norm
+        elif r < p_now + p_later:
+            return TDIntent.LATER, norm
+        else:
+            return TDIntent.NONE, norm
+
+    def _score_card_for_battle(
+        self,
+        view: "PlayerView",
+        my_card: Card,
+        opp_name: str,
+        opp_cands,
+        board_totals,
+        td_intent: TDIntent,
+        td_strength: float
+    ) -> float:
+        """
+        Base EV + TD‑intent shaping + stubbornness‑weighted belief that opponent plays their represented type
+        when their TYPE is unknown.
+        """
+        # --- base EV (value-aware) ---
+        base_ev = self._ev_card_value(my_card, opp_cands, board_totals)
+
+        # --- TD shaping weights (ww_*) ---
+        ww_td_now_boost     = 0.02   # boost ~ v^2 when NOW
+        ww_td_later_penalty = 0.50   # penalty ~ v when LATER
+        ww_none_center_bias = 0.05   # light center-ish bias for NONE
+
+        v = my_card.number
+        if td_intent == TDIntent.NOW:
+            base_ev += td_strength * ww_td_now_boost * (v * v)
+        elif td_intent == TDIntent.LATER:
+            base_ev -= td_strength * ww_td_later_penalty * v
+        else:
+            base_ev += ww_none_center_bias * (11 - abs(6 - v))
+
+        # --- stubbornness belief vector (only if opponent TYPE unknown) ---
+        # If we don't know opp type (because they showed number or haven't played),
+        # assume they play their represented type on the board; score how our card fares vs that.
+        ww_belief = 1.0  # weight for belief vector contribution
+        stub = self.traits.stubbornness / 100.0
+
+        # detect if TYPE is unknown: opp_cands contains multiple types; if all same type -> known type
+        types_in_cands = {t for (t, _v, _cnt) in opp_cands}
+        if len(types_in_cands) > 1:
+            opp_rep = self._opponent_rep_type(opp_name, view.board.raw_bets)
+            if opp_rep is not None:
+                # Build hypothetical candidate set constrained to opp_rep type
+                # (respect any known number constraints in opp_cands)
+                # Count remaining by number for that type using current candidates
+                by_val = {}
+                total_cnt = 0
+                for (t,v,cnt) in opp_cands:
+                    if t == opp_rep:
+                        by_val[v] = by_val.get(v, 0) + cnt
+                        total_cnt += cnt
+                if total_cnt > 0:
+                    # compute p_win, p_lose against *only* opp_rep candidates
+                    wins = losses = 0
+                    my_base = self._card_strength(my_card, board_totals)
+                    for v, cnt in by_val.items():
+                        opp_base = v * board_totals.get(opp_rep, 0)
+                        dom_me   = self._multiplier(my_card.type, opp_rep)
+                        dom_opp  = self._multiplier(opp_rep, my_card.type)
+                        s_me  = my_base * max(dom_me, 1)
+                        s_opp = opp_base * max(dom_opp, 1)
+                        if s_me > s_opp: wins += cnt
+                        elif s_opp > s_me: losses += cnt
+                    p_win = wins / total_cnt
+                    p_lose = losses / total_cnt
+                    belief_score = (p_win - p_lose) * stub
+                    base_ev += ww_belief * belief_score
+                # else: no remaining cards of that type -> add 0
+
+        return base_ev
+
+    def _choose_show_side(self, my_card: Card, opp_cands, board_totals) -> bool:
+        """
+        Decide to show TYPE (True) or NUMBER (False) by maximizing opponent uncertainty.
+        """
+        def entropy_if_show(show_type: bool) -> float:
+            wins = losses = total = 0
+            for (t,v,cnt) in opp_cands:
+                dom_me   = self._multiplier(my_card.type, t)
+                dom_opp  = self._multiplier(t, my_card.type)
+                s_me  = my_card.number * board_totals.get(my_card.type, 0) * max(dom_me,1)
+                s_opp = v * board_totals.get(t, 0) * max(dom_opp,1)
+                if s_me > s_opp: wins += cnt
+                elif s_opp > s_me: losses += cnt
+                total += cnt
+            if total == 0:
+                return 0.0
+            p = max(1e-6, min(1-1e-6, wins/total))
+            return -(p*math.log(p) + (1-p)*math.log(1-p))
+
+        e_type   = entropy_if_show(True)
+        e_number = entropy_if_show(False)
+
+        if abs(e_type - e_number) < 1e-6:
+            return self.rng.random() > (self.traits.bluffiness/100.0)
+        return e_type >= e_number
+
+    def choose_cards_for_battles(
+        self,
+        view: "PlayerView",
+        battles: list["Battle"],
+        memory: "DeckMemory"
+    ) -> list[tuple["Battle", "Card", bool]]:
+        """
+        Return list of (battle_obj, chosen_card, show_type_bool) for all battles involving me.
+        """
+        intent, intent_strength = self._decide_td_intent(view, battles, memory)
+        board_totals = view.board.total_bets_by_type
+
+        hand = list(view.my_hand.cards)
+        picks: list[tuple["Battle", "Card", bool]] = []
+
+        # prioritize battles where opponent has already revealed something to me
+        def opp_partial_info(b: "Battle") -> int:
+            if b.player1.name == view.me:
+                c = b.card2
+            else:
+                c = b.card1
+            return 1 if c is not None else 0
+
+        ordered = sorted(battles, key=opp_partial_info, reverse=True)
+
+        for b in ordered:
+            # perspective & partial info toward me
+            if b.player1.name == view.me:
+                opp_name = b.player2.name
+                opp_type_known  = (b.card2 is not None and b.card2_shows_type)
+                opp_num_known   = (b.card2 is not None and not b.card2_shows_type)
+                opp_shown_type  = b.card2.type   if opp_type_known else None
+                opp_shown_value = b.card2.number if opp_num_known  else None
+            else:
+                opp_name = b.player1.name
+                opp_type_known  = (b.card1 is not None and b.card1_shows_type)
+                opp_num_known   = (b.card1 is not None and not b.card1_shows_type)
+                opp_shown_type  = b.card1.type   if opp_type_known else None
+                opp_shown_value = b.card1.number if opp_num_known  else None
+
+            # opponent candidate set from memory + shown info
+            opp_cands = memory.possible_given_shown(
+                shown_type=opp_shown_type,
+                shown_number=opp_shown_value
+            )
+
+            # score my current hand for this battle
+            card_scores: list[tuple[float, "Card"]] = []
+            for c in hand:
+                sc = self._score_card_for_battle(
+                    view=view,
+                    my_card=c,
+                    opp_name=opp_name,
+                    opp_cands=opp_cands,
+                    board_totals=board_totals,
+                    td_intent=intent,
+                    td_strength=intent_strength,
+                )
+                card_scores.append((sc, c))
+
+            if not card_scores:
+                break
+
+            # softmax select
+            mx = max(s for s,_ in card_scores)
+            ww_temp_min, ww_temp_max = 0.15, 2.0
+            temperature = 1.2 - 0.9 * (self.traits.ev_adherence/100.0)
+            temperature = max(ww_temp_min, min(ww_temp_max, temperature))
+            exps = [math.exp((s - mx)/temperature) for s,_ in card_scores]
+            Z = sum(exps) or 1.0
+            r = self.rng.random()
+            acc = 0.0
+            chosen = card_scores[0][1]
+            for w, (_s, c) in zip(exps, card_scores):
+                acc += w / Z
+                if r <= acc:
+                    chosen = c
+                    break
+
+            # decide show side
+            show_type = self._choose_show_side(chosen, opp_cands, board_totals)
+
+            # record and consume from temporary hand
+            picks.append((b, chosen, show_type))
+            hand.remove(chosen)
+
+        return picks
+
    
    
    
     # Phase 4 – subphase 1 (playing cards + preliminary bets)
     def assign_cards_and_bets(
-        self, view: PlayerView
-    ) -> List[Tuple[int, Card, bool, int]]:
+        self, view: "PlayerView"
+    ) -> List[Tuple[int, "Card", bool, int]]:
         """
-        For each of my battles, return a tuple:
-        (battle_id, card, show_type_bool, bet_amount)
-        Order doesn’t matter; engine will apply respecting turn order.
+        For each of my battles, return (battle_id, card, show_type_bool, bet_amount).
+        Uses real Battle objects and self.brain_memory.
         """
-        raise NotImplementedError
+        # 1) my battles from the view (expected: List[Battle])
+        battles = list(getattr(view, "battles", []))
+
+        # 2) ensure deck memory exists and knows my hand
+        if not hasattr(self, "brain_memory") or self.brain_memory is None:
+            self.brain_memory = DeckMemory()
+            self.brain_memory.remove_cards(view.my_hand.cards)
+
+        # 3) choose (battle, card, show_type) via the brain
+        picks = self.choose_cards_for_battles(view, battles, self.brain_memory)
+
+        # 4) map to (battle_id, card, show_type, prelim_bet)
+        results: List[Tuple[int, "Card", bool, int]] = []
+        for (battle, card, show_type) in picks:
+            battle_id = id(battle)   # stable within run; engine can map id->Battle
+            prelim_bet = 1           # simple preliminary bet; tune later
+            results.append((battle_id, card, show_type, prelim_bet))
+
+        return results
 
     # Phase 4 – subphase 2 (additional betting, before equalization)
     def additional_battle_bets(

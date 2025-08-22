@@ -8,6 +8,7 @@ import random
 from typing import List, Dict, Optional
 from colorama import Fore, Back, Style
 from .globals import ADDITIONAL_INFO, TARGET_PLAYER
+from .brains.base import DeckMemory
 
 
 
@@ -26,6 +27,8 @@ def simulate_game(num_players=4, num_battles=3, starting_coins=10):
             ev_adherence = 60,
             exploration = 3,
         ))
+        p.brain_memory = DeckMemory()
+        p.brain_memory.remove_cards(p.cards)
     for round_num in range(1, num_players + 1):
         print(f"\n--- Round {round_num} ---")
         board.reset()

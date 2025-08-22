@@ -1,0 +1,2 @@
+remove cards from memory
+add global variables for printing rules
