@@ -26,11 +26,11 @@ def play_battle_phase(players, battles, board, round_num, battle_index):
     print(f"\n>>> Battle Phase {battle_index + 1} in Round {round_num}")
     for player in players:
         print(f"player {player.name} has {player.front_coins}")
-        player_assign_cards_and_bets(player)
+        player_assign_cards_and_bets(player, players, board)
     for player in reversed(players):
         player_additional_battle_bets(player)
     equalize_all_battles(battles)
-    resolve_battles(battles, board)
+    resolve_battles(battles, board, players)
     for player in players:
         if player.battles[0].winner == player and ((player.battles[0].player1 == player and player.battles[0].bet1 != 0) or player.battles[0].player2 == player and player.battles[0].bet2 != 0):
             if player.battles[1].winner == player and ((player.battles[1].player1 == player and player.battles[1].bet1 != 0) or player.battles[1].player2 == player and player.battles[1].bet2 != 0):

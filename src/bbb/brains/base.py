@@ -6,7 +6,7 @@ from ..models import Card, GladiatorType, Battle
 from ..observations import PlayerView
 from colorama import Fore, Back, Style
 from .utils import estimate_future_representation_open_lane
-from ..globals import ADDITIONAL_INFO, TARGET_PLAYER, NUMBER_OF_BATTLES, NUM_PLAYERS, FOCUS_ON_BET_SIZING
+from ..globals import ADDITIONAL_INFO, TARGET_PLAYER, NUMBER_OF_BATTLES, NUM_PLAYERS, FOCUS_ON_BET_SIZING, FOCUS_ON_CARD_PLAY
 from collections import Counter
 from typing import Iterable
 from enum import Enum as _Enum
@@ -56,13 +56,6 @@ def _softmax_pick(scores: Dict[GladiatorType, float], rng: random.Random, temper
     return next(iter(scores))  # fallback
 
 
-    
-
-
-
-
-
-
 class DeckMemory:
     """
     Tracks remaining unseen cards globally from this player's perspective.
@@ -77,7 +70,10 @@ class DeckMemory:
                 self.remaining[(t, v)] += 1
 
     def remove_cards(self, cards: Iterable[Card]):
+        print(Back.YELLOW + Fore.BLACK + f"Removing from memory: {cards}" + Style.RESET_ALL)
         for c in cards:
+            if c is None:
+                continue
             self.remaining[(c.type, c.number)] = max(0, self.remaining[(c.type, c.number)] - 1)
 
     def count_total(self) -> int:
@@ -98,6 +94,7 @@ class DeckMemory:
             if shown_number is not None and v != shown_number:
                 continue
             out.append((t, v, cnt))
+        #print(Back.YELLOW + Fore.BLACK + f"possible cards given shown {shown_type} {shown_number}: {out}" + Style.RESET_ALL)
         return out
 
 
@@ -112,6 +109,7 @@ class PlayerBrain:
     def __init__(self, rng: Optional[random.Random] = None, traits: Optional[Traits] = None):
         self.rng = rng or random.Random()
         self.traits = traits or Traits()
+        self.brain_memory = DeckMemory()
 
     # Phase 1
     def pick_favored_faction(self, view: PlayerView) -> str:
@@ -434,6 +432,12 @@ class PlayerBrain:
                 sum_win_vals += v * cnt  # value of card we would take when we win
             elif s_opp > s_me:
                 losses += cnt
+            elif s_me == s_opp:
+                if dom_me > 1 and dom_opp == 1:
+                    wins += cnt
+                    sum_win_vals += v * cnt
+                elif dom_opp > 1 and dom_me == 1:
+                    losses += cnt
             total += cnt
 
         return wins, losses, total, sum_win_vals
@@ -444,6 +448,8 @@ class PlayerBrain:
         (ties ignored)
         """
         wins, losses, total, sum_win_vals = self._win_lose_stats(my_card, opp_candidates, board_totals)
+        if FOCUS_ON_CARD_PLAY:
+            print(Back.WHITE + Fore.LIGHTBLACK_EX + f"for {my_card} wins: {wins} losses: {losses} total: {total}" + Style.RESET_ALL)
         if total == 0:
             return 0.0
         p_win  = wins   / total
@@ -470,12 +476,8 @@ class PlayerBrain:
         # For each battle, compute the best EV if we play NOW
         battle_scores: list[float] = []
         for b in battles:
-            if b.player1.name == view.me:
-                opp_shown_type  = b.card2.type if (b.card2 is not None and b.card2_shows_type) else None
-                opp_shown_value = b.card2.number if (b.card2 is not None and not b.card2_shows_type) else None
-            else:
-                opp_shown_type  = b.card1.type if (b.card1 is not None and b.card1_shows_type) else None
-                opp_shown_value = b.card1.number if (b.card1 is not None and not b.card1_shows_type) else None
+            opp_shown_type = b.opp_card.type if (b.opp_card is not None and b.opp_faceup == 'type') else None
+            opp_shown_value = b.opp_card.number if (b.opp_card is not None and b.opp_faceup == 'number') else None
 
             opp_cands = memory.possible_given_shown(shown_type=opp_shown_type, shown_number=opp_shown_value)
 
@@ -536,6 +538,8 @@ class PlayerBrain:
         # --- base EV (value-aware) ---
         base_ev = self._ev_card_value(my_card, opp_cands, board_totals)
 
+        if FOCUS_ON_CARD_PLAY:
+            print(Back.WHITE + Fore.LIGHTBLACK_EX + f"for {my_card} base_ev={base_ev:.2f}" + Style.RESET_ALL)
         # --- TD shaping weights (ww_*) ---
         ww_td_now_boost     = 0.02   # boost ~ v^2 when NOW
         ww_td_later_penalty = 0.50   # penalty ~ v when LATER
@@ -548,6 +552,9 @@ class PlayerBrain:
             base_ev -= td_strength * ww_td_later_penalty * v
         else:
             base_ev += ww_none_center_bias * (11 - abs(6 - v))
+
+        if FOCUS_ON_CARD_PLAY:
+            print(Back.WHITE + Fore.LIGHTBLACK_EX + f"for {my_card} base_ev after TD={base_ev:.2f} ~ TD_intend={td_intent} TD_strength={td_strength}" + Style.RESET_ALL)
 
         # --- stubbornness belief vector (only if opponent TYPE unknown) ---
         # If we don't know opp type (because they showed number or haven't played),
@@ -584,9 +591,10 @@ class PlayerBrain:
                     p_win = wins / total_cnt
                     p_lose = losses / total_cnt
                     belief_score = (p_win - p_lose) * stub
+                    if FOCUS_ON_CARD_PLAY:
+                        print(Back.WHITE + Fore.LIGHTBLACK_EX + f"for {my_card} Stubborness addage{ww_belief * belief_score:.2f}" + Style.RESET_ALL)
                     base_ev += ww_belief * belief_score
                 # else: no remaining cards of that type -> add 0
-
         return base_ev
 
     def _choose_show_side(self, my_card: Card, opp_cands, board_totals) -> bool:
@@ -632,28 +640,19 @@ class PlayerBrain:
 
         # prioritize battles where opponent has already revealed something to me
         def opp_partial_info(b: "Battle") -> int:
-            if b.player1.name == view.me:
-                c = b.card2
+            if b.opp_card is None:
+                return 0
             else:
-                c = b.card1
-            return 1 if c is not None else 0
+                return 1
 
         ordered = sorted(battles, key=opp_partial_info, reverse=True)
 
         for b in ordered:
-            # perspective & partial info toward me
-            if b.player1.name == view.me:
-                opp_name = b.player2.name
-                opp_type_known  = (b.card2 is not None and b.card2_shows_type)
-                opp_num_known   = (b.card2 is not None and not b.card2_shows_type)
-                opp_shown_type  = b.card2.type   if opp_type_known else None
-                opp_shown_value = b.card2.number if opp_num_known  else None
-            else:
-                opp_name = b.player1.name
-                opp_type_known  = (b.card1 is not None and b.card1_shows_type)
-                opp_num_known   = (b.card1 is not None and not b.card1_shows_type)
-                opp_shown_type  = b.card1.type   if opp_type_known else None
-                opp_shown_value = b.card1.number if opp_num_known  else None
+            opp_name = b.opponent_name
+            opp_type_known  = (b.opp_card is not None and b.opp_faceup == 'type')
+            opp_num_known   = (b.opp_card is not None and not b.opp_faceup == 'number')
+            opp_shown_type  = b.opp_card.type  if opp_type_known else None
+            opp_shown_value = b.opp_card.number if opp_num_known  else None
 
             # opponent candidate set from memory + shown info
             opp_cands = memory.possible_given_shown(
@@ -662,6 +661,8 @@ class PlayerBrain:
             )
 
             # score my current hand for this battle
+            if FOCUS_ON_CARD_PLAY:
+                print(Back.WHITE + Fore.LIGHTBLACK_EX + f"Choosing for {view.me} in battle vs {opp_name}" + Style.RESET_ALL)
             card_scores: list[tuple[float, "Card"]] = []
             for c in hand:
                 sc = self._score_card_for_battle(
@@ -673,6 +674,8 @@ class PlayerBrain:
                     td_intent=intent,
                     td_strength=intent_strength,
                 )
+                if FOCUS_ON_CARD_PLAY:
+                    print(Back.WHITE + Fore.LIGHTBLACK_EX + f"final score for {c} is {sc:.2f}" + Style.RESET_ALL)
                 card_scores.append((sc, c))
 
             if not card_scores:
@@ -702,9 +705,6 @@ class PlayerBrain:
             hand.remove(chosen)
 
         return picks
-
-   
-   
    
     # Phase 4 – subphase 1 (playing cards + preliminary bets)
     def assign_cards_and_bets(
@@ -719,6 +719,7 @@ class PlayerBrain:
 
         # 2) ensure deck memory exists and knows my hand
         if not hasattr(self, "brain_memory") or self.brain_memory is None:
+            print(Back.RED + Fore.LIGHTMAGENTA_EX + "Brain memory NOT found! Initializing brain memory" + Style.RESET_ALL)
             self.brain_memory = DeckMemory()
             self.brain_memory.remove_cards(view.my_hand.cards)
 

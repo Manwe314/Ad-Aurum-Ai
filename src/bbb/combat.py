@@ -15,7 +15,7 @@ def calculate_strength(card, board, opponent_card):
     bonus_2x = rel_bonus(card.type, opponent_card.type, two_x_chain, 2)
     return base_strength * max(bonus_3x, bonus_2x)
 
-def resolve_battles(battles, board):
+def resolve_battles(battles, board, players):
     for battle in battles:
         if battle.card1 is None or battle.card2 is None or battle.winner is not None:
             continue
@@ -23,7 +23,8 @@ def resolve_battles(battles, board):
         str1 = calculate_strength(battle.card1, board, battle.card2)
         str2 = calculate_strength(battle.card2, board, battle.card1)
         print(f"{battle.player1.name} strength: {str1}, {battle.player2.name} strength: {str2}")
-
+        for p in players:
+            p.brain.brain_memory.remove_cards([battle.card1, battle.card2])
         if str1 > str2:
             battle.player1.cards_won.append(battle.card2)
             battle.winner = battle.player1

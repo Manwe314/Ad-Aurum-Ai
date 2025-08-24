@@ -13,6 +13,8 @@ class BoardView:
 class BattleView:
     battle_id: int
     opponent_name: str
+    my_card: Optional[Card]        # None if I haven't played yet
+    opp_card: Optional[Card]       # None if they haven't played yet
     my_faceup: Optional[str]      # "type" or "number" or None (what I'm showing)
     opp_faceup: Optional[str]     # "type" or "number" or None (what they are showing)
     my_bet: int
@@ -47,6 +49,7 @@ class PlayerView:
     all_battles_public: List[BattleView]    # all battles (public structure & faceup flags/bets)
     favored_faction_choice: Optional[str]   # who I picked (None before phase 1)
     context: RoundContext
+    battle_view_to_idx: Dict[int, int]  # mapping from id(BattleView) to index in all_battles_public
 
 def _faceup_of(player_is_p1: bool, battle: Battle) -> Optional[str]:
     if player_is_p1:
@@ -63,10 +66,14 @@ def _battle_view_for(me: Player, battle_id: int, battle: Battle) -> BattleView:
         opp = battle.player2
         my_bet, opp_bet = battle.bet1, battle.bet2
         my_faceup = _faceup_of(True, battle)
+        my_card = battle.card1
+        opp_card = battle.card2
         opp_faceup = _faceup_of(False, battle)
     elif battle.player2 == me:
         opp = battle.player1
         my_bet, opp_bet = battle.bet2, battle.bet1
+        my_card = battle.card2
+        opp_card = battle.card1
         my_faceup = _faceup_of(False, battle)
         opp_faceup = _faceup_of(True, battle)
     else:
@@ -80,6 +87,8 @@ def _battle_view_for(me: Player, battle_id: int, battle: Battle) -> BattleView:
         battle_id=battle_id,
         opponent_name=opp.name,
         my_faceup=my_faceup,
+        my_card=my_card,
+        opp_card=opp_card,
         opp_faceup=opp_faceup,
         my_bet=my_bet,
         opp_bet=opp_bet,
@@ -114,10 +123,13 @@ def build_player_view(
     # battle views (my battles + public list)
     my_battles = []
     all_battles_public = []
+    battle_view_id_to_index = {}
     for battle_id, b in enumerate(battles):
-        all_battles_public.append(_battle_view_for(me, battle_id, b))
+        v = _battle_view_for(me, battle_id, b)
+        all_battles_public.append(v)
+        battle_view_id_to_index[id(v)] = battle_id  # <--- mapping added here
         if b.player1 == me or b.player2 == me:
-            my_battles.append(_battle_view_for(me, battle_id, b))
+            my_battles.append(v)
 
     # hand
     my_hand = PlayerHandView(cards=list(me.cards))
@@ -135,5 +147,6 @@ def build_player_view(
         battles=my_battles,
         all_battles_public=all_battles_public,
         favored_faction_choice=favored,
+        battle_view_to_idx=battle_view_id_to_index,
         context=RoundContext(round_number=round_number, battle_phase_index=battle_phase_index),
     )

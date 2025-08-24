@@ -7,9 +7,14 @@ from .brains.base import PlayerBrain, Traits
 import random
 from typing import List, Dict, Optional
 from colorama import Fore, Back, Style
-from .globals import ADDITIONAL_INFO, TARGET_PLAYER
+from .globals import ADDITIONAL_INFO, TARGET_PLAYER, GAME_ENGINE_PIRINTS
 from .brains.base import DeckMemory
 
+
+def rotate_players(players: list) -> list:
+    if not players:
+        return players
+    return players[1:] + players[:1]
 
 
 def simulate_game(num_players=4, num_battles=3, starting_coins=10):
@@ -27,8 +32,7 @@ def simulate_game(num_players=4, num_battles=3, starting_coins=10):
             ev_adherence = 60,
             exploration = 3,
         ))
-        p.brain_memory = DeckMemory()
-        p.brain_memory.remove_cards(p.cards)
+        
     for round_num in range(1, num_players + 1):
         print(f"\n--- Round {round_num} ---")
         board.reset()
@@ -45,9 +49,12 @@ def simulate_game(num_players=4, num_battles=3, starting_coins=10):
         cards_per_player = num_battles * 3 + 1
         for player in players:
             player.cards = deck.draw(cards_per_player)
+            player.brain.brain_memory = DeckMemory()
+            player.brain.brain_memory.remove_cards(player.cards)
             if player.name == TARGET_PLAYER:
                 print(Fore.BLACK + Back.YELLOW + ADDITIONAL_INFO)
-            print(f"{player.name} draws: {player.cards}" + Style.RESET_ALL)
+            if GAME_ENGINE_PIRINTS:
+                print(f"{player.name} draws: {player.cards}" + Style.RESET_ALL)
 
         #phase three
         for player in players:
@@ -61,7 +68,6 @@ def simulate_game(num_players=4, num_battles=3, starting_coins=10):
                 players[i].battles.append(battle)
                 players[j].battles.append(battle)
                 battles.append(battle)
-        #print(Back.LIGHTRED_EX + Fore.LIGHTBLACK_EX + f"\nBattles created: {battles}"  + Style.RESET_ALL)
 
         for battle_index in range(num_battles):
             play_battle_phase(players, battles, board, round_num, battle_index)
@@ -71,6 +77,7 @@ def simulate_game(num_players=4, num_battles=3, starting_coins=10):
 
         #phase6
         evaluate_favored_factions(players)
+        players = rotate_players(players)
     
     for player in players:
             player.reset_round()
@@ -78,7 +85,8 @@ def simulate_game(num_players=4, num_battles=3, starting_coins=10):
     for player in players:
         if player.name == TARGET_PLAYER:
             print(Fore.BLACK + Back.YELLOW + ADDITIONAL_INFO)
-        print(f"{player.name} ends with {player.coins} coins and {player.rounds_won} rounds won." + Style.RESET_ALL)
+        if GAME_ENGINE_PIRINTS:
+            print(f"{player.name} ends with {player.coins} coins and {player.rounds_won} rounds won." + Style.RESET_ALL)
 
 if __name__ == "__main__":
     simulate_game(num_players=4, num_battles=3, starting_coins=10)
