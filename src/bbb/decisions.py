@@ -74,8 +74,6 @@ def player_assign_cards_and_bets(player, all_players, board):
                 else:
                     player.cards.remove(card)
 
-                # Clamp bet to available coins; must be >= 1 by rule
-                bet = max(1, min(player.coins, int(bet)))
                 player.coins -= bet
                 # If you want to mirror older behavior, uncomment the next line:
                 # player.front_coins += bet

@@ -6,7 +6,7 @@ from ..models import Card, GladiatorType, Battle
 from ..observations import PlayerView
 from colorama import Fore, Back, Style
 from .utils import estimate_future_representation_open_lane
-from ..globals import ADDITIONAL_INFO, TARGET_PLAYER, NUMBER_OF_BATTLES, NUM_PLAYERS, FOCUS_ON_BET_SIZING, FOCUS_ON_CARD_PLAY
+from ..globals import ADDITIONAL_INFO, TARGET_PLAYER, NUMBER_OF_BATTLES, NUM_PLAYERS, FOCUS_ON_BET_SIZING, FOCUS_ON_CARD_PLAY,FOCUS_ON_BATTLE_INITIAL_BET
 from collections import Counter
 from typing import Iterable
 from enum import Enum as _Enum
@@ -70,7 +70,6 @@ class DeckMemory:
                 self.remaining[(t, v)] += 1
 
     def remove_cards(self, cards: Iterable[Card]):
-        print(Back.YELLOW + Fore.BLACK + f"Removing from memory: {cards}" + Style.RESET_ALL)
         for c in cards:
             if c is None:
                 continue
@@ -705,6 +704,142 @@ class PlayerBrain:
             hand.remove(chosen)
 
         return picks
+    
+    def _choose_preliminary_bet_for_battle(
+        self,
+        view: "PlayerView",
+        battle_view,                    # has .opponent_name, .opp_card, .opp_faceup, .battle_id
+        my_card: Card,
+        board_totals: Dict[GladiatorType, int],
+        memory: "DeckMemory",
+        td_intent: TDIntent,
+        td_strength: float,
+    ) -> int:
+        """
+        Score a in [0..behind] with:
+          Score(a) = TD-pressure(a)  - Liquidity(a)  + EV(a)  + AggBoost(a)
+
+        EV here is (p_win - p_lose) * a (opponent concede ⇒ no coins from prelims).
+        Liquidity reserve uses *future prelims*:
+          future_prelims = 3 * (NUMBER_OF_BATTLES * rounds_left_after_current
+                                + repetitions_left_in_current_round)
+        """
+        rng = self.rng
+        traits = self.traits
+
+        behind = view.my_bankroll.behind
+        if behind <= 0:
+            return 0
+
+        # ---------- Opp identity & candidates ----------
+        opp_name = battle_view.opponent_name
+        opp_type_known  = (battle_view.opp_card is not None and battle_view.opp_faceup == 'type')
+        opp_num_known   = (battle_view.opp_card is not None and battle_view.opp_faceup == 'number')
+        opp_shown_type  = battle_view.opp_card.type   if opp_type_known else None
+        opp_shown_value = battle_view.opp_card.number if opp_num_known  else None
+
+        opp_cands = memory.possible_given_shown(
+            shown_type=opp_shown_type,
+            shown_number=opp_shown_value
+        )
+
+        # ---------- p_win / p_lose for EV ----------
+        wins, losses, total, _ = self._win_lose_stats(my_card, opp_cands, board_totals)
+        p_win  = (wins   / total) if total > 0 else 0.5
+        p_lose = (losses / total) if total > 0 else 0.5
+
+        # ---------- rounds/repetitions left for reserve ----------
+        try:
+            from ..globals import NUM_PLAYERS, NUMBER_OF_BATTLES
+            total_rounds = NUM_PLAYERS
+            reps_per_round = NUMBER_OF_BATTLES
+        except Exception:
+            total_rounds = 4
+            reps_per_round = 3
+
+        # round_number is 1-based per your view
+        cur_round = max(1, int(view.context.round_number))
+        rounds_left_after = max(0, total_rounds - cur_round)
+
+        rep_idx = view.context.battle_phase_index
+        if rep_idx is None:
+            reps_left_current = reps_per_round  # if not yet started, all repetitions are left
+        else:
+            # repetitions left *after this repetition*
+            reps_left_current = max(0, reps_per_round - (rep_idx + 1))
+
+        future_prelims = 3 * (reps_per_round * rounds_left_after + reps_left_current)
+
+        # ---------- Weights ----------
+        # TD pressure (penalize a==0 if going for TD)
+        ww_td_zero_now    = 1.20
+        ww_td_zero_later  = 0.65
+        # Liquidity / reserve
+        ww_liq_linear       = 0.85
+        ww_liq_later_mult   = 1.40    # stronger save-coin pressure if TD is LATER
+        ww_reserve_per_pre  = 0.30    # keep ~0.3 coin per future prelim (tune)
+        ww_short_mult_base  = 0.60    # base shortfall multiplier
+        # EV
+        ww_ev               = 0.95
+        # Aggressiveness (concave)
+        ww_aggr             = 0.12
+
+        liq_mult = ww_liq_later_mult if td_intent == TDIntent.LATER else 1.0
+        reserve_target = ww_reserve_per_pre * future_prelims
+
+        scores: Dict[int, float] = {}
+        for a in range(0, behind + 1):
+            s = 0.0
+
+            # --- 1) TD pressure against a==0 ---
+            if a == 0:
+                if td_intent == TDIntent.NOW:
+                    s -= ww_td_zero_now * td_strength
+                elif td_intent == TDIntent.LATER:
+                    s -= ww_td_zero_later * max(0.25, td_strength * 0.8)
+                if FOCUS_ON_BATTLE_INITIAL_BET:
+                    print(Back.CYAN + Fore.LIGHTYELLOW_EX + f"{view.me} a={a}: score after TD preasure {s}" + Style.RESET_ALL)
+            
+
+            # --- 2) Liquidity: linear spend + reserve shortfall ---
+            liq_pen = ww_liq_linear * a * liq_mult
+            remaining_after = max(0, behind - a)
+            short = max(0.0, reserve_target - remaining_after)
+            ww_short_mult = ww_short_mult_base + 0.4 * (traits.ev_adherence / 100.0)  # 0.6..1.0
+            liq_pen += ww_short_mult * short
+            s -= liq_pen
+            if FOCUS_ON_BATTLE_INITIAL_BET:
+                    print(Back.CYAN + Fore.LIGHTYELLOW_EX + f"{view.me} a={a}: liquidity {liq_pen}" + Style.RESET_ALL)
+            # --- 3) EV: (p_win - p_lose) * a ---
+            s += ww_ev * ((p_win - p_lose) * a)
+            if FOCUS_ON_BATTLE_INITIAL_BET:
+                    print(Back.CYAN + Fore.LIGHTYELLOW_EX + f"{view.me} a={a}: EV {((p_win - p_lose) * a):.2f}" + Style.RESET_ALL)
+
+            # --- 4) Aggressiveness (concave in a) ---
+            s += ww_aggr * (traits.aggressiveness / 100.0) * math.sqrt(a)
+
+            scores[a] = s
+            if FOCUS_ON_BATTLE_INITIAL_BET:
+                print(Back.CYAN + Fore.LIGHTYELLOW_EX + f"{view.me} a={a}: final score {s:.2f}" + Style.RESET_ALL)
+
+        # Exploration: small chance
+        if rng.random() < (traits.exploration / 100.0):
+            return rng.randint(0, behind)
+
+        # Softmax
+        mx = max(scores.values()) if scores else 0.0
+        temperature = 1.5 - 1.3 * (traits.ev_adherence / 100.0)
+        temperature = max(0.15, min(2.5, temperature))
+        exps = {a: math.exp((v - mx) / temperature) for a, v in scores.items()}
+        Z = sum(exps.values()) or 1.0
+        r = rng.random()
+        acc = 0.0
+        for a, w in exps.items():
+            acc += w / Z
+            if r <= acc:
+                return int(a)
+        return 0
+
    
     # Phase 4 – subphase 1 (playing cards + preliminary bets)
     def assign_cards_and_bets(
@@ -725,26 +860,296 @@ class PlayerBrain:
 
         # 3) choose (battle, card, show_type) via the brain
         picks = self.choose_cards_for_battles(view, battles, self.brain_memory)
+        td_intent, td_strength = self._decide_td_intent(view, battles, self.brain_memory)
+        board_totals = view.board.total_bets_by_type
+
 
         # 4) map to (battle_id, card, show_type, prelim_bet)
         results: List[Tuple[int, "Card", bool, int]] = []
+        budget = view.my_bankroll.behind
+
         for (battle, card, show_type) in picks:
             battle_id = id(battle)   # stable within run; engine can map id->Battle
-            prelim_bet = 1           # simple preliminary bet; tune later
+            prelim_bet = self._choose_preliminary_bet_for_battle(
+                view=view,
+                battle_view=battle,
+                my_card=card,
+                board_totals=board_totals,
+                memory=self.brain_memory,
+                td_intent=td_intent,
+                td_strength=td_strength,
+            )
+            prelim_bet = max(0, min(budget, int(prelim_bet)))
+            budget -= prelim_bet
             results.append((battle_id, card, show_type, prelim_bet))
 
         return results
 
     # Phase 4 – subphase 2 (additional betting, before equalization)
-    def additional_battle_bets(
-        self, view: PlayerView
-    ) -> Dict[int, int]:
+    def additional_battle_bets(self, view: "PlayerView") -> Dict[int, int]:
         """
-        Return a mapping battle_id -> delta_bet you want to add (can be 0).
-        Negative not allowed (no un-betting). Concede is handled by equalization phase
-        in your engine; a brain can “signal” concede by returning 0 then failing equalization.
+        Choose up to 3 incremental additional bets across my battles in this subphase.
+        Joint choice: (battle, a) via softmax over scores(battle, a).
+        Returns {battle_id: delta_amount_to_add}.
         """
-        raise NotImplementedError
+        rng = self.rng
+        traits = self.traits
+
+        behind = view.my_bankroll.behind
+        if behind <= 0:
+            return {getattr(b, "battle_id", i): 0 for i, b in enumerate(view.battles)}
+
+        # Weights
+        ww_ev            = 1.0
+        ww_concede_mask  = 0.7   # how much we reduce EV if we expect opp to concede
+        ww_bluff_hint    = 0.25  # boost when our TYPE likely scares opp (bluffiness)
+        ww_aggr          = 0.08  # concave aggressiveness boost
+        ww_liq_linear    = 0.35  # mild liquidity cost per coin
+        ww_liq_short     = 0.40  # extra shortfall cost (scaled by ev_adherence)
+
+        # Reserve logic: prefer keeping some coins for future prelims (same formula you set before)
+        try:
+            from ..globals import NUM_PLAYERS, NUMBER_OF_BATTLES
+            total_rounds = NUM_PLAYERS
+            reps_per_round = NUMBER_OF_BATTLES
+        except Exception:
+            total_rounds = 4
+            reps_per_round = 3
+
+        cur_round = max(1, int(view.context.round_number))
+        rounds_left_after = max(0, total_rounds - cur_round)
+        rep_idx = view.context.battle_phase_index
+        if rep_idx is None:
+            reps_left_current = reps_per_round
+        else:
+            reps_left_current = max(0, reps_per_round - (rep_idx + 1))
+        future_prelims = 3 * (reps_per_round * rounds_left_after + reps_left_current)
+        reserve_target = 0.25 * future_prelims  # gentler than prelim stage, we’re already in subphase 2
+
+        # Board totals (multipliers) for EV calc
+        board_totals = view.board.total_bets_by_type
+
+        # Track cumulative additions per battle within this call
+        added: Dict[int, int] = {getattr(b, "battle_id", i): 0 for i, b in enumerate(view.battles)}
+
+        # Helper: score (battle, a) with current remaining budget
+        def score_for(battle_view, a: int) -> float:
+            if a < 0:
+                return -1e9
+            bid = getattr(battle_view, "battle_id", None)
+            if bid is None:
+                # fallback with mapping you added
+                bid = getattr(view, "battle_view_to_idx", {}).get(id(battle_view))
+                if bid is None:
+                    return -1e9
+
+            # Current visible bets on this battle
+            my_bet  = getattr(battle_view, "my_bet", 0) + added.get(bid, 0)
+            opp_bet = getattr(battle_view, "opp_bet", 0)
+
+            my_card  = getattr(battle_view, "my_card", None)
+            opp_card = getattr(battle_view, "opp_card", None)
+            if my_card is None:
+                return -1e9  # we have nothing committed here yet; engine should have set our card by now
+
+            opp_type_known  = (opp_card is not None and getattr(battle_view, "opp_faceup", None) == 'type')
+            opp_num_known   = (opp_card is not None and getattr(battle_view, "opp_faceup", None) == 'number')
+            opp_shown_type  = opp_card.type   if opp_type_known else None
+            opp_shown_value = opp_card.number if opp_num_known  else None
+
+            # Opponent candidate set (partial info + memory)
+            opp_cands = self.brain_memory.possible_given_shown(
+                shown_type=opp_shown_type,
+                shown_number=opp_shown_value
+            )
+
+            # Win/lose probabilities for *this card* vs candidate set
+            wins, losses, total, _ = self._win_lose_stats(my_card, opp_cands, board_totals)
+            p_win  = (wins   / total) if total > 0 else 0.5
+            p_lose = (losses / total) if total > 0 else 0.5
+
+            # Concede tendency: larger delta you create ⇒ more likely opp backs off.
+            # Use board multiplier gap as a soft proxy (if our TYPE dominates their rep type).
+            opp_name = getattr(battle_view, "opponent_name", "")
+            opp_rep  = self._opponent_rep_type(opp_name, view.board.raw_bets)
+            dom_gap  = 0
+            if opp_rep is not None:
+                dom_gap = self._multiplier(my_card.type, opp_rep) - self._multiplier(opp_rep, my_card.type)  # in {-2..+2} roughly
+
+            # Logistic concede likelihood from *this add* (relative to current opp bet)
+            # Bigger a relative to opp_bet pushes concede prob up.
+            k_c = 0.35
+            base = (a - max(0, opp_bet - my_bet))  # how much this add would flip/extend lead
+            p_concede = 1.0 / (1.0 + math.exp(-k_c * (base + 0.75 * dom_gap)))
+
+            # EV of adding 'a': if fight happens, pot at risk for us grows by 'a' too.
+            # We model score ~ (p_win - p_lose) * (my_bet + a). If opp concedes, treat EV as “masked” (we won’t realize that now).
+            ev_raw = (p_win - p_lose) * (my_bet + a)
+            ev = (1.0 - ww_concede_mask * p_concede) * ev_raw
+
+            # Bluff hint: if our type strongly beats opp_rep and we are NOT showing our TYPE, we get extra bluff pressure
+            show_face = getattr(battle_view, "my_faceup", None)
+            am_showing_type = (show_face == 'type')
+            bluff_bonus = 0.0
+            if opp_rep is not None and self._multiplier(my_card.type, opp_rep) > 1 and not am_showing_type:
+                bluff_bonus = ww_bluff_hint * (self.traits.bluffiness / 100.0)
+
+            # Liquidity penalties
+            liq = ww_liq_linear * a
+            remaining_after = max(0, current_budget - a)
+            short = max(0.0, reserve_target - remaining_after)
+            liq += (ww_liq_short + 0.4 * (self.traits.ev_adherence / 100.0)) * short
+
+            # Aggressiveness (concave)
+            aggr = ww_aggr * (self.traits.aggressiveness / 100.0) * math.sqrt(max(0, a))
+
+            return ww_ev * ev + bluff_bonus + aggr - liq
+
+        # Greedy 3 picks with softmax each time
+        results: Dict[int, int] = {getattr(b, "battle_id", i): 0 for i, b in enumerate(view.battles)}
+        current_budget = behind
+
+        for _step in range(min(3, behind)):
+            # Build the (battle, a) score table with a in 0..min( max_step, current_budget )
+            # To keep compute sane, consider a ∈ {0,1,2,3} ∩ [0..current_budget]
+            a_candidates = [a for a in (0,1,2,3) if a <= current_budget]
+            table: List[Tuple[float, int, int]] = []  # (score, battle_idx, a)
+
+            for i, b in enumerate(view.battles):
+                for a in a_candidates:
+                    sc = score_for(b, a)
+                    table.append((sc, i, a))
+
+            if not table:
+                break
+
+            # Softmax pick across the whole table
+            mx = max(s for s,_,_ in table)
+            temperature = 1.2 - 0.9 * (self.traits.ev_adherence / 100.0)
+            temperature = max(0.15, min(2.0, temperature))
+            weights = [math.exp((s - mx)/temperature) for (s,_,_) in table]
+            Z = sum(weights) or 1.0
+            r = rng.random()
+            acc = 0.0
+            chosen_idx = 0
+            for k, w in enumerate(weights):
+                acc += w / Z
+                if r <= acc:
+                    chosen_idx = k
+                    break
+
+            sc, bi, a = table[chosen_idx]
+            bview = view.battles[bi]
+            bid = getattr(bview, "battle_id", None)
+            if bid is None:
+                bid = getattr(view, "battle_view_to_idx", {}).get(id(bview))
+            if bid is None:
+                continue
+
+            # Apply the choice
+            results[bid] += a
+            added[bid] += a
+            current_budget -= a
+            if current_budget <= 0:
+                break
+
+        # Any remaining battles not touched already default to +0
+        return results
+
+    def decide_equalize_or_concede(
+        self,
+        view: "PlayerView",
+        battle_view,
+        deficit_to_match: int,
+    ) -> Tuple[bool, int]:
+        """
+        Decide whether to FIGHT (match/push what we can) or CONCEDE in equalization.
+    
+        Returns:
+            (fight: bool, amount_to_commit: int)
+    
+        Rules handled:
+          - If fight=True and behind < deficit, we commit what we have (engine will let battle proceed unmatched).
+          - If behind == 0 and fight=True, engine should apply the “bank stakes 1” rule (we signal 0 here).
+          - If fight=False, commit 0 (engine concedes and opponent wins pot + diff from bank).
+        """
+        rng = self.rng
+        traits = self.traits
+    
+        behind = view.my_bankroll.behind
+        if deficit_to_match <= 0:
+            return (True, 0)  # nothing to do
+    
+        # Pull my/opp cards, partial info and compute EV for continuing
+        my_card  = getattr(battle_view, "my_card", None)
+        opp_card = getattr(battle_view, "opp_card", None)
+    
+        if my_card is None:
+            # If we haven't even placed a card (shouldn't happen here), be conservative: concede if huge deficit
+            return (deficit_to_match <= 1, min(behind, deficit_to_match))
+    
+        board_totals = view.board.total_bets_by_type
+    
+        opp_type_known  = (opp_card is not None and getattr(battle_view, "opp_faceup", None) == 'type')
+        opp_num_known   = (opp_card is not None and getattr(battle_view, "opp_faceup", None) == 'number')
+        opp_shown_type  = opp_card.type   if opp_type_known else None
+        opp_shown_value = opp_card.number if opp_num_known  else None
+    
+        opp_cands = self.brain_memory.possible_given_shown(
+            shown_type=opp_shown_type,
+            shown_number=opp_shown_value
+        )
+    
+        wins, losses, total, _ = self._win_lose_stats(my_card, opp_cands, board_totals)
+        p_win  = (wins   / total) if total > 0 else 0.5
+        p_lose = (losses / total) if total > 0 else 0.5
+    
+        # Stubbornness: resist folding when the opponent is likely “bullying”
+        # Detect bluff pressure: if our TYPE > opp_rep by dominance and we are NOT showing TYPE,
+        # we’re slightly more willing to fight through a deficit.
+        opp_name = getattr(battle_view, "opponent_name", "")
+        opp_rep  = self._opponent_rep_type(opp_name, view.board.raw_bets)
+        show_face = getattr(battle_view, "my_faceup", None)
+        am_showing_type = (show_face == 'type')
+        dom_gap = 0
+        if opp_rep is not None:
+            dom_gap = self._multiplier(my_card.type, opp_rep) - self._multiplier(opp_rep, my_card.type)
+    
+        ww_ev              = 1.0
+        ww_deficit_pen     = 0.85   # linear pain from the deficit we must call
+        ww_stubborn_boost  = 0.60   # how strongly stubbornness offsets deficit/EV
+        ww_liq_call_cost   = 0.35   # liquidity pain of committing coins to match
+        ww_bank_bias       = 0.30   # small bias to fight if bank can stake 1 (when behind==0)
+    
+        # Base call EV approx: (p_win - p_lose) * (my_total_at_risk_after_call)
+        my_bet  = getattr(battle_view, "my_bet", 0)
+        opp_bet = getattr(battle_view, "opp_bet", 0)
+        call_amount = min(behind, deficit_to_match)
+        risk_after_call = my_bet + call_amount
+    
+        ev_call = ww_ev * ((p_win - p_lose) * risk_after_call)
+    
+        # Deficit pain + liquidity pain
+        call_cost = ww_deficit_pen * deficit_to_match + ww_liq_call_cost * call_amount
+    
+        # Stubbornness: reduce effective cost when (a) we’re type-superior to opp_rep and (b) we’re obscuring our type
+        stubborn = (traits.stubbornness / 100.0)
+        stubborn_offset = 0.0
+        if dom_gap > 0 and not am_showing_type:
+            stubborn_offset = ww_stubborn_boost * stubborn * dom_gap
+    
+        # Net score for fighting
+        fight_score = ev_call - call_cost + stubborn_offset
+    
+        # A tiny bias to keep fighting if we’re broke and bank can stake 1
+        if behind == 0:
+            fight_score += ww_bank_bias
+    
+        # Decide
+        if fight_score > 0:
+            return (True, call_amount)   # fight (match if can; else push what we have)
+        else:
+            return (False, 0)            # concede
 
 
 

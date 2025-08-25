@@ -1,2 +1,5 @@
-remove cards from memory
 add global variables for printing rules
+
+check final 2 functions
+wire in betting when out of money
+get to a final working state.
