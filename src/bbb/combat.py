@@ -49,10 +49,14 @@ def correct_bets(battle):
         #     print(Back.CYAN + f"{battle.player1.name} and {battle.player2.name} have no winner, bets are returned. {battle.bet1} , {battle.bet2} atm: {battle.player1.front_coins} , {battle.player2.front_coins}" + Style.RESET_ALL)
     if battle.winner == battle.player1:
         battle.player1.front_coins += battle.bet1 + battle.bet2
+        if battle.bet1 > battle.bet2:
+            battle.player1.front_coins += (battle.bet1 - battle.bet2)
         # if battle.player1.name == 'P1':
         #     print(Back.CYAN + f"{battle.player1.name} wins, bets are collected. {battle.bet1} + {battle.bet2} = {battle.bet1 + battle.bet2} atm: {battle.player1.front_coins}" + Style.RESET_ALL)
     if battle.winner == battle.player2:
         battle.player2.front_coins += battle.bet1 + battle.bet2
+        if battle.bet2 > battle.bet1:
+            battle.player2.front_coins += (battle.bet2 - battle.bet1)
         # if battle.player2.name == 'P1':
         #     print(Back.CYAN + f"{battle.player2.name} wins, bets are collected. {battle.bet1} + {battle.bet2} = {battle.bet1 + battle.bet2} atm: {battle.player2.front_coins}" + Style.RESET_ALL)
 

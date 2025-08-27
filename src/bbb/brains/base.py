@@ -932,102 +932,139 @@ class PlayerBrain:
         # Track cumulative additions per battle within this call
         added: Dict[int, int] = {getattr(b, "battle_id", i): 0 for i, b in enumerate(view.battles)}
 
-        # Helper: score (battle, a) with current remaining budget
-        def score_for(battle_view, a: int) -> float:
-            if a < 0:
-                return -1e9
-            bid = getattr(battle_view, "battle_id", None)
-            if bid is None:
-                # fallback with mapping you added
-                bid = getattr(view, "battle_view_to_idx", {}).get(id(battle_view))
-                if bid is None:
-                    return -1e9
-
-            # Current visible bets on this battle
-            my_bet  = getattr(battle_view, "my_bet", 0) + added.get(bid, 0)
-            opp_bet = getattr(battle_view, "opp_bet", 0)
-
-            my_card  = getattr(battle_view, "my_card", None)
-            opp_card = getattr(battle_view, "opp_card", None)
-            if my_card is None:
-                return -1e9  # we have nothing committed here yet; engine should have set our card by now
-
-            opp_type_known  = (opp_card is not None and getattr(battle_view, "opp_faceup", None) == 'type')
-            opp_num_known   = (opp_card is not None and getattr(battle_view, "opp_faceup", None) == 'number')
+                # ---------- precompute per-battle constants (independent of 'a') ----------
+        battle_info = []  # list of dicts aligned with view.battles indices
+        for i, bview in enumerate(view.battles):
+            info = {
+                "i": i,
+                "bid": getattr(bview, "battle_id", None) or getattr(view, "battle_view_to_idx", {}).get(id(bview)),
+                "valid": True,
+                "my_bet0": getattr(bview, "my_bet", 0),
+                "opp_bet0": getattr(bview, "opp_bet", 0),
+                "bluff_bonus": 0.0,
+                "m_ev": 0.0,     # slope for EV wrt 'a' (ww_ev * (p_win - p_lose))
+                "ev_const": 0.0, # constant part of EV wrt 'a' (ww_ev * (p_win - p_lose) * my_bet0)
+                "base_flip": 0,  # how much 'a' is needed to flip/extend lead for concede calc
+                "dom_gap": 0,    # dominance gap vs opp's representation
+            }
+        
+            my_card  = getattr(bview, "my_card", None)
+            opp_card = getattr(bview, "opp_card", None)
+            if my_card is None or info["bid"] is None:
+                info["valid"] = False
+                battle_info.append(info)
+                continue
+            
+            # partial info
+            opp_type_known  = (opp_card is not None and getattr(bview, "opp_faceup", None) == 'type')
+            opp_num_known   = (opp_card is not None and getattr(bview, "opp_faceup", None) == 'number')
             opp_shown_type  = opp_card.type   if opp_type_known else None
             opp_shown_value = opp_card.number if opp_num_known  else None
-
-            # Opponent candidate set (partial info + memory)
+        
+            # opponent candidate set from memory
             opp_cands = self.brain_memory.possible_given_shown(
                 shown_type=opp_shown_type,
                 shown_number=opp_shown_value
             )
-
-            # Win/lose probabilities for *this card* vs candidate set
+        
+            # p_win / p_lose for *this card*
             wins, losses, total, _ = self._win_lose_stats(my_card, opp_cands, board_totals)
             p_win  = (wins   / total) if total > 0 else 0.5
             p_lose = (losses / total) if total > 0 else 0.5
-
-            # Concede tendency: larger delta you create ⇒ more likely opp backs off.
-            # Use board multiplier gap as a soft proxy (if our TYPE dominates their rep type).
-            opp_name = getattr(battle_view, "opponent_name", "")
+        
+            # EV parts that don't depend on 'a'
+            m_ev = ww_ev * (p_win - p_lose)                  # slope wrt 'a'
+            ev_const = m_ev * info["my_bet0"]                # constant part
+            info["m_ev"] = m_ev
+            info["ev_const"] = ev_const
+        
+            # concede proxy: dominance vs opponent's represented type
+            opp_name = getattr(bview, "opponent_name", "")
             opp_rep  = self._opponent_rep_type(opp_name, view.board.raw_bets)
             dom_gap  = 0
             if opp_rep is not None:
-                dom_gap = self._multiplier(my_card.type, opp_rep) - self._multiplier(opp_rep, my_card.type)  # in {-2..+2} roughly
-
-            # Logistic concede likelihood from *this add* (relative to current opp bet)
-            # Bigger a relative to opp_bet pushes concede prob up.
-            k_c = 0.35
-            base = (a - max(0, opp_bet - my_bet))  # how much this add would flip/extend lead
-            p_concede = 1.0 / (1.0 + math.exp(-k_c * (base + 0.75 * dom_gap)))
-
-            # EV of adding 'a': if fight happens, pot at risk for us grows by 'a' too.
-            # We model score ~ (p_win - p_lose) * (my_bet + a). If opp concedes, treat EV as “masked” (we won’t realize that now).
-            ev_raw = (p_win - p_lose) * (my_bet + a)
-            ev = (1.0 - ww_concede_mask * p_concede) * ev_raw
-
-            # Bluff hint: if our type strongly beats opp_rep and we are NOT showing our TYPE, we get extra bluff pressure
-            show_face = getattr(battle_view, "my_faceup", None)
+                dom_gap = self._multiplier(my_card.type, opp_rep) - self._multiplier(opp_rep, my_card.type)
+            info["dom_gap"] = dom_gap
+        
+            # bluff bonus (constant wrt 'a')
+            show_face = getattr(bview, "my_faceup", None)
             am_showing_type = (show_face == 'type')
             bluff_bonus = 0.0
             if opp_rep is not None and self._multiplier(my_card.type, opp_rep) > 1 and not am_showing_type:
                 bluff_bonus = ww_bluff_hint * (self.traits.bluffiness / 100.0)
-
-            # Liquidity penalties
+            info["bluff_bonus"] = bluff_bonus
+        
+            # how much add is needed to flip/extend lead (for concede pressure)
+            my_bet0  = info["my_bet0"]
+            opp_bet0 = info["opp_bet0"]
+            info["base_flip"] = max(0, opp_bet0 - my_bet0)
+        
+            battle_info.append(info)
+        
+        # only consider valid battles
+        battles_remaining = [bi for bi, inf in enumerate(battle_info) if inf["valid"]]
+        results = {inf["bid"]: 0 for inf in battle_info if inf["valid"]}
+        current_budget = behind
+        
+        # we allow up to 3 picks, but not more than we have battles or budget
+        max_steps = min(3, current_budget, len(battles_remaining))
+        
+        def score_a_for_battle(inf: dict, a: int, cur_budget: int) -> float:
+            """
+            Score for adding 'a' coins to this battle, using only a-dependent terms:
+              ev(a) = (1 - ww_concede_mask * p_concede(a)) * (ev_const + m_ev * a)
+              liq(a) = ww_liq_linear * a + (ww_liq_short + 0.4*ev_adherence) * short(cur_budget, a)
+              aggr(a) = ww_aggr * sqrt(a) * aggressiveness
+              + bluff_bonus (a-constant)
+            """
+            if a < 0 or a > cur_budget:
+                return -1e9
+        
+            # concede prob from 'a'
+            k_c = 0.35
+            base_flip = inf["base_flip"]
+            dom_gap   = inf["dom_gap"]
+            # larger 'a' beyond base_flip => higher concede prob
+            p_concede = 1.0 / (1.0 + math.exp(-k_c * ( (a - base_flip) + 0.75 * dom_gap )))
+        
+            # EV with masking by concede
+            ev = (1.0 - ww_concede_mask * p_concede) * (inf["ev_const"] + inf["m_ev"] * a)
+        
+            # liquidity & reserve (depends on current budget at this pick)
             liq = ww_liq_linear * a
-            remaining_after = max(0, current_budget - a)
+            remaining_after = max(0, cur_budget - a)
             short = max(0.0, reserve_target - remaining_after)
             liq += (ww_liq_short + 0.4 * (self.traits.ev_adherence / 100.0)) * short
-
-            # Aggressiveness (concave)
-            aggr = ww_aggr * (self.traits.aggressiveness / 100.0) * math.sqrt(max(0, a))
-
-            return ww_ev * ev + bluff_bonus + aggr - liq
-
-        # Greedy 3 picks with softmax each time
-        results: Dict[int, int] = {getattr(b, "battle_id", i): 0 for i, b in enumerate(view.battles)}
-        current_budget = behind
-
-        for _step in range(min(3, behind)):
-            # Build the (battle, a) score table with a in 0..min( max_step, current_budget )
-            # To keep compute sane, consider a ∈ {0,1,2,3} ∩ [0..current_budget]
-            a_candidates = [a for a in (0,1,2,3) if a <= current_budget]
-            table: List[Tuple[float, int, int]] = []  # (score, battle_idx, a)
-
-            for i, b in enumerate(view.battles):
+        
+            # aggressiveness (concave)
+            aggr = ww_aggr * (self.traits.aggressiveness / 100.0) * math.sqrt(a)
+        
+            return ev + inf["bluff_bonus"] + aggr - liq
+        
+        # ---------- greedy 3 picks with softmax; each pick removes that battle ----------
+        for _step in range(max_steps):
+            if current_budget <= 0 or not battles_remaining:
+                break
+            
+            # all a in 0..current_budget
+            a_candidates = range(0, current_budget + 1)
+        
+            # build (score, battle_idx, a) table
+            table: List[Tuple[float, int, int]] = []
+            for bi in battles_remaining:
+                inf = battle_info[bi]
                 for a in a_candidates:
-                    sc = score_for(b, a)
-                    table.append((sc, i, a))
-
+                    sc = score_a_for_battle(inf, a, current_budget)
+                    table.append((sc, bi, a))
+        
             if not table:
                 break
-
-            # Softmax pick across the whole table
-            mx = max(s for s,_,_ in table)
+            
+            # softmax over (battle, a) pairs
+            mx = max(s for s, _, _ in table)
             temperature = 1.2 - 0.9 * (self.traits.ev_adherence / 100.0)
             temperature = max(0.15, min(2.0, temperature))
-            weights = [math.exp((s - mx)/temperature) for (s,_,_) in table]
+            weights = [math.exp((s - mx) / temperature) for (s, _, _) in table]
             Z = sum(weights) or 1.0
             r = rng.random()
             acc = 0.0
@@ -1037,21 +1074,19 @@ class PlayerBrain:
                 if r <= acc:
                     chosen_idx = k
                     break
-
+                
             sc, bi, a = table[chosen_idx]
-            bview = view.battles[bi]
-            bid = getattr(bview, "battle_id", None)
-            if bid is None:
-                bid = getattr(view, "battle_view_to_idx", {}).get(id(bview))
-            if bid is None:
-                continue
-
-            # Apply the choice
+            inf = battle_info[bi]
+            bid = inf["bid"]
+        
+            # apply pick
             results[bid] += a
             added[bid] += a
             current_budget -= a
-            if current_budget <= 0:
-                break
+        
+            # remove this battle so we never pick it again
+            battles_remaining.remove(bi)
+
 
         # Any remaining battles not touched already default to +0
         return results

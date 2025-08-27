@@ -1,5 +1,5 @@
 add global variables for printing rules
 
-check final 2 functions
-wire in betting when out of money
+fix issues with defaulting to common behaviour 
+fix coins unreal addage
 get to a final working state.

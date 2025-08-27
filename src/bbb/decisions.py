@@ -31,7 +31,7 @@ def choose_betting_type(player, players ,board):
         print(Fore.BLACK + Back.YELLOW + ADDITIONAL_INFO)
     print(f"{player.name} bets {bet_amount} on {chosen_type.value}" + Style.RESET_ALL)
 
-def player_assign_cards_and_bets(player, all_players, board):
+def player_assign_cards_and_bets(player, all_players, board, round_number, battle_phase_index):
     """
     Engine hook: if the player has a brain with assign_cards_and_bets(view),
     use it; otherwise fall back to the old random assignment.
@@ -46,7 +46,7 @@ def player_assign_cards_and_bets(player, all_players, board):
         print(f"[Brain Missing] {player.name} has no brain; using random assignment.")
     if hasattr(player, "brain") and player.brain is not None:
         # Build the PlayerView for this player
-        view = build_player_view(player, all_players, board, player.battles, round_number=0, battle_phase_index=None)
+        view = build_player_view(player, all_players, board, player.battles, round_number, battle_phase_index)
 
         # Ask the brain for (battle_id, card, show_type, bet)
         try:
@@ -62,6 +62,7 @@ def player_assign_cards_and_bets(player, all_players, board):
                 idx = view.battle_view_to_idx.get(bid)
                 battle = player.battles[idx] if idx is not None else None
                 if battle is None:
+                    print(Back.RED + Fore.WHITE + f"[Brain Error] {player.name}: invalid battle id {bid}. Skipping." + Style.RESET_ALL)
                     continue  # skip unknown battle id
 
                 # Ensure the chosen card is actually in hand
@@ -118,7 +119,52 @@ def player_assign_cards_and_bets(player, all_players, board):
 
         
 
-def player_additional_battle_bets(player):
+def player_additional_battle_bets(player, all_players, board, round_number, battle_phase_index):
+    if not hasattr(player, "brain") or player.brain is None:
+        print(f"[Brain Missing] {player.name} has no brain; using random assignment.")
+    if hasattr(player, "brain") and player.brain is not None:
+        # Build the PlayerView for this player
+        view = build_player_view(player, all_players, board, player.battles, round_number, battle_phase_index)
+
+        try:
+            results = player.brain.additional_battle_bets(view)
+            if FOCUS_ON_CARD_PLAY:
+                print(Back.WHITE + Fore.LIGHTBLACK_EX + f"RESULTS {results}" + Style.RESET_ALL)
+        except Exception as e:
+            print(f"[Brain Error] {player.name}: {e}. Falling back to no additional bets.")
+            results = {}
+
+        # Apply additional bets
+        for bid, additional_bet in results.items():
+            if additional_bet <= 0:
+                continue  # no-op entries are fine
+            
+            # Map battle_id -> index in player.battles
+            idx = view.battle_view_to_idx.get(bid)
+            battle = player.battles[idx] if idx is not None else None
+            if battle is None:
+                print(Back.RED + Fore.WHITE + f"[Brain Error] {player.name}: invalid battle id {bid}. Skipping." + Style.RESET_ALL)
+                continue
+            
+            # Clamp to available bankroll (safety – brain already budgets, but engine enforces)
+            spend = min(additional_bet, player.coins)
+            if spend <= 0:
+                continue
+            
+            # Move coins behind -> front for visibility this round
+            player.coins -= spend
+
+            # Apply to the correct side of the shared Battle
+            if battle.player1 is player:
+                battle.bet1 += spend
+            else:
+                battle.bet2 += spend
+
+            if player.name == TARGET_PLAYER:
+                print(Fore.BLACK + Back.YELLOW +ADDITIONAL_INFO)
+            print(f"{player.name} adds +{spend} to battle vs "
+                  f"{battle.player2.name if battle.player1 is player else battle.player1.name} "
+                  f"(now {battle.bet1}-{battle.bet2})" + Style.RESET_ALL)
     for battle in player.battles:
         # if player.coins <= 0:
         #     print(Fore.RED + Back.GREEN + f"{player.name} has no coins left to bet." + Style.RESET_ALL)
