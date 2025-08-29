@@ -46,10 +46,8 @@ class PlayerView:
     my_bankroll: PlayerBankrollView
     others_bankrolls: Dict[str, PlayerBankrollView]  # public-ish view: we expose both for now since your engine prints it
     battles: List[BattleView]               # current round’s battles involving me
-    all_battles_public: List[BattleView]    # all battles (public structure & faceup flags/bets)
     favored_faction_choice: Optional[str]   # who I picked (None before phase 1)
     context: RoundContext
-    battle_view_to_idx: Dict[int, int]  # mapping from id(BattleView) to index in all_battles_public
 
 def _faceup_of(player_is_p1: bool, battle: Battle) -> Optional[str]:
     if player_is_p1:
@@ -122,14 +120,9 @@ def build_player_view(
 
     # battle views (my battles + public list)
     my_battles = []
-    all_battles_public = []
-    battle_view_id_to_index = {}
     for battle_id, b in enumerate(battles):
         v = _battle_view_for(me, battle_id, b)
-        all_battles_public.append(v)
-        battle_view_id_to_index[id(v)] = battle_id  # <--- mapping added here
-        if b.player1 == me or b.player2 == me:
-            my_battles.append(v)
+        my_battles.append(v)
 
     # hand
     my_hand = PlayerHandView(cards=list(me.cards))
@@ -145,8 +138,6 @@ def build_player_view(
         my_bankroll=my_bankroll,
         others_bankrolls=others_bankrolls,
         battles=my_battles,
-        all_battles_public=all_battles_public,
         favored_faction_choice=favored,
-        battle_view_to_idx=battle_view_id_to_index,
         context=RoundContext(round_number=round_number, battle_phase_index=battle_phase_index),
     )

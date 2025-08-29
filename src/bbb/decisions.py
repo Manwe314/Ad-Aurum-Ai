@@ -59,8 +59,7 @@ def player_assign_cards_and_bets(player, all_players, board, round_number, battl
 
         if results:
             for (bid, card, show_type, bet) in results:
-                idx = view.battle_view_to_idx.get(bid)
-                battle = player.battles[idx] if idx is not None else None
+                battle = player.battles[bid] if 0 <= bid < len(player.battles) else None
                 if battle is None:
                     print(Back.RED + Fore.WHITE + f"[Brain Error] {player.name}: invalid battle id {bid}. Skipping." + Style.RESET_ALL)
                     continue  # skip unknown battle id
@@ -139,9 +138,7 @@ def player_additional_battle_bets(player, all_players, board, round_number, batt
             if additional_bet <= 0:
                 continue  # no-op entries are fine
             
-            # Map battle_id -> index in player.battles
-            idx = view.battle_view_to_idx.get(bid)
-            battle = player.battles[idx] if idx is not None else None
+            battle = player.battles[bid] if 0 <= bid < len(player.battles) else None
             if battle is None:
                 print(Back.RED + Fore.WHITE + f"[Brain Error] {player.name}: invalid battle id {bid}. Skipping." + Style.RESET_ALL)
                 continue

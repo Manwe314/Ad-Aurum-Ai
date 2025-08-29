@@ -9,7 +9,6 @@ def equalize_all_battles(battles, players, board, round_number, battle_phase_ind
     fight (match if possible; otherwise add what they can / bank=1 if 0) or concede.
     """
     # Precompute a map: battle object -> its global index in this round's battles
-    battle_index_map = {b: i for i, b in enumerate(battles)}
 
     for battle in battles:
         if battle.winner is not None:
@@ -39,12 +38,11 @@ def equalize_all_battles(battles, players, board, round_number, battle_phase_ind
             round_number,
             battle_phase_index,
         )
-
         # Find the correct battle_view inside this player's view by global id
-        global_battle_id = battle_index_map[battle]
         my_bview = None
-        for bv in getattr(view, "battles", []):
-            if getattr(bv, "battle_id", None) == global_battle_id:
+        for bv in view.battles:
+            if (battle.player1 == acting and bv.opponent_name == battle.player2.name) or \
+               (battle.player2 == acting and bv.opponent_name == battle.player1.name):
                 my_bview = bv
                 break
 

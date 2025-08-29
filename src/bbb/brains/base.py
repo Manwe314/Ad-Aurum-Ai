@@ -6,7 +6,7 @@ from ..models import Card, GladiatorType, Battle
 from ..observations import PlayerView
 from colorama import Fore, Back, Style
 from .utils import estimate_future_representation_open_lane
-from ..globals import ADDITIONAL_INFO, TARGET_PLAYER, NUMBER_OF_BATTLES, NUM_PLAYERS, FOCUS_ON_BET_SIZING, FOCUS_ON_CARD_PLAY,FOCUS_ON_BATTLE_INITIAL_BET
+from ..globals import ADDITIONAL_INFO, TARGET_PLAYER, NUMBER_OF_BATTLES, NUM_PLAYERS, FOCUS_ON_BET_SIZING, FOCUS_ON_CARD_PLAY,FOCUS_ON_BATTLE_INITIAL_BET, FOCUS_ON_ADDITIONAL_BETS
 from collections import Counter
 from typing import Iterable
 from enum import Enum as _Enum
@@ -111,17 +111,46 @@ class PlayerBrain:
         self.brain_memory = DeckMemory()
 
     # Phase 1
-    def pick_favored_faction(self, view: PlayerView) -> str:
-        favored = ""
-        max_coins = -1
-        for name in view.players:
-            if name != view.me:
-                coins = view.others_bankrolls[name].behind + view.others_bankrolls[name].front
-                if coins > max_coins:
-                    max_coins = coins
-                    favored = name
-        return favored
-                
+    def pick_favored_faction(self, view: "PlayerView") -> str:
+        """
+        Decide favored faction (an opponent's name) using a single weight + risk_tolerance:
+          - Risky route: favor the last-to-act player this round (latest in turn order).
+          - Safe route: favor the richest opponent; if tie, pick the one latest in turn order.
+        """
+        # Opponents in the current turn order (view.players is ordered)
+        others = [name for name in view.players if name != view.me]
+        if not others:
+            return ""  # no opponents (edge case)
+
+        # --- Identify candidates ---
+        # Last to act = last name in 'others' (since 'players' is in turn order)
+        last_to_act = others[-1]
+
+        # Richest total = behind + front
+        # Build a list of (name, total) respecting turn order in 'others'
+        totals = [(name, view.others_bankrolls.get(name).behind) for name in others if name in view.others_bankrolls]
+        if not totals:
+            # If bankroll info missing, default to last_to_act
+            return last_to_act
+
+        max_total = max(t for _, t in totals)
+        # Keep only tied richest, preserving order; then take the latest (last) among them
+        richest_tied_in_order = [name for (name, t) in totals if t == max_total]
+        richest_latest = richest_tied_in_order[-1]
+
+        # --- Blend via risk tolerance and a single weight ---
+        risk = (getattr(self, "traits", None).risk_tolerance / 100.0) if getattr(self, "traits", None) else 0.5
+        ww_last_bias = 1.2  # single tunable weight: higher => risk tilts more strongly to "last"
+
+        # Logistic switch centered at risk=0.5
+        x = (risk - 0.5) * 2.0  # map risk to [-1, +1]
+        p_choose_last = 1.0 / (1.0 + math.exp(-ww_last_bias * x))
+
+        # Sample the route
+        if self.rng.random() < p_choose_last:
+            return last_to_act
+        else:
+            return richest_latest
 
     # Phase 3 (representation)
     def pick_representation_bet(self, view: PlayerView) -> Tuple[GladiatorType, int]:
@@ -869,7 +898,7 @@ class PlayerBrain:
         budget = view.my_bankroll.behind
 
         for (battle, card, show_type) in picks:
-            battle_id = id(battle)   # stable within run; engine can map id->Battle
+            battle_id = getattr(battle, "battle_id", None)  
             prelim_bet = self._choose_preliminary_bet_for_battle(
                 view=view,
                 battle_view=battle,
@@ -937,7 +966,7 @@ class PlayerBrain:
         for i, bview in enumerate(view.battles):
             info = {
                 "i": i,
-                "bid": getattr(bview, "battle_id", None) or getattr(view, "battle_view_to_idx", {}).get(id(bview)),
+                "bid": getattr(bview, "battle_id", None),
                 "valid": True,
                 "my_bet0": getattr(bview, "my_bet", 0),
                 "opp_bet0": getattr(bview, "opp_bet", 0),
@@ -947,7 +976,7 @@ class PlayerBrain:
                 "base_flip": 0,  # how much 'a' is needed to flip/extend lead for concede calc
                 "dom_gap": 0,    # dominance gap vs opp's representation
             }
-        
+
             my_card  = getattr(bview, "my_card", None)
             opp_card = getattr(bview, "opp_card", None)
             if my_card is None or info["bid"] is None:
@@ -960,24 +989,24 @@ class PlayerBrain:
             opp_num_known   = (opp_card is not None and getattr(bview, "opp_faceup", None) == 'number')
             opp_shown_type  = opp_card.type   if opp_type_known else None
             opp_shown_value = opp_card.number if opp_num_known  else None
-        
+
             # opponent candidate set from memory
             opp_cands = self.brain_memory.possible_given_shown(
                 shown_type=opp_shown_type,
                 shown_number=opp_shown_value
             )
-        
+
             # p_win / p_lose for *this card*
             wins, losses, total, _ = self._win_lose_stats(my_card, opp_cands, board_totals)
             p_win  = (wins   / total) if total > 0 else 0.5
             p_lose = (losses / total) if total > 0 else 0.5
-        
+
             # EV parts that don't depend on 'a'
             m_ev = ww_ev * (p_win - p_lose)                  # slope wrt 'a'
             ev_const = m_ev * info["my_bet0"]                # constant part
             info["m_ev"] = m_ev
             info["ev_const"] = ev_const
-        
+
             # concede proxy: dominance vs opponent's represented type
             opp_name = getattr(bview, "opponent_name", "")
             opp_rep  = self._opponent_rep_type(opp_name, view.board.raw_bets)
@@ -985,7 +1014,7 @@ class PlayerBrain:
             if opp_rep is not None:
                 dom_gap = self._multiplier(my_card.type, opp_rep) - self._multiplier(opp_rep, my_card.type)
             info["dom_gap"] = dom_gap
-        
+
             # bluff bonus (constant wrt 'a')
             show_face = getattr(bview, "my_faceup", None)
             am_showing_type = (show_face == 'type')
@@ -993,22 +1022,22 @@ class PlayerBrain:
             if opp_rep is not None and self._multiplier(my_card.type, opp_rep) > 1 and not am_showing_type:
                 bluff_bonus = ww_bluff_hint * (self.traits.bluffiness / 100.0)
             info["bluff_bonus"] = bluff_bonus
-        
+
             # how much add is needed to flip/extend lead (for concede pressure)
             my_bet0  = info["my_bet0"]
             opp_bet0 = info["opp_bet0"]
             info["base_flip"] = max(0, opp_bet0 - my_bet0)
-        
+
             battle_info.append(info)
-        
+
         # only consider valid battles
         battles_remaining = [bi for bi, inf in enumerate(battle_info) if inf["valid"]]
         results = {inf["bid"]: 0 for inf in battle_info if inf["valid"]}
         current_budget = behind
-        
+
         # we allow up to 3 picks, but not more than we have battles or budget
         max_steps = min(3, current_budget, len(battles_remaining))
-        
+
         def score_a_for_battle(inf: dict, a: int, cur_budget: int) -> float:
             """
             Score for adding 'a' coins to this battle, using only a-dependent terms:
@@ -1019,28 +1048,30 @@ class PlayerBrain:
             """
             if a < 0 or a > cur_budget:
                 return -1e9
-        
+
             # concede prob from 'a'
             k_c = 0.35
             base_flip = inf["base_flip"]
             dom_gap   = inf["dom_gap"]
             # larger 'a' beyond base_flip => higher concede prob
             p_concede = 1.0 / (1.0 + math.exp(-k_c * ( (a - base_flip) + 0.75 * dom_gap )))
-        
+
             # EV with masking by concede
             ev = (1.0 - ww_concede_mask * p_concede) * (inf["ev_const"] + inf["m_ev"] * a)
-        
+
             # liquidity & reserve (depends on current budget at this pick)
             liq = ww_liq_linear * a
             remaining_after = max(0, cur_budget - a)
             short = max(0.0, reserve_target - remaining_after)
             liq += (ww_liq_short + 0.4 * (self.traits.ev_adherence / 100.0)) * short
-        
+
             # aggressiveness (concave)
             aggr = ww_aggr * (self.traits.aggressiveness / 100.0) * math.sqrt(a)
-        
+            if FOCUS_ON_ADDITIONAL_BETS:
+                print(Back.MAGENTA + Fore.LIGHTYELLOW_EX + f"Score for adding a={a} to battle {inf['bid']}: ev={ev:.2f} liq={liq:.2f} aggr={aggr:.2f} bluff={inf['bluff_bonus']:.2f}" + Style.RESET_ALL)
+
             return ev + inf["bluff_bonus"] + aggr - liq
-        
+
         # ---------- greedy 3 picks with softmax; each pick removes that battle ----------
         for _step in range(max_steps):
             if current_budget <= 0 or not battles_remaining:
@@ -1048,7 +1079,7 @@ class PlayerBrain:
             
             # all a in 0..current_budget
             a_candidates = range(0, current_budget + 1)
-        
+
             # build (score, battle_idx, a) table
             table: List[Tuple[float, int, int]] = []
             for bi in battles_remaining:
@@ -1056,7 +1087,7 @@ class PlayerBrain:
                 for a in a_candidates:
                     sc = score_a_for_battle(inf, a, current_budget)
                     table.append((sc, bi, a))
-        
+
             if not table:
                 break
             
@@ -1078,12 +1109,12 @@ class PlayerBrain:
             sc, bi, a = table[chosen_idx]
             inf = battle_info[bi]
             bid = inf["bid"]
-        
+
             # apply pick
             results[bid] += a
             added[bid] += a
             current_budget -= a
-        
+
             # remove this battle so we never pick it again
             battles_remaining.remove(bi)
 

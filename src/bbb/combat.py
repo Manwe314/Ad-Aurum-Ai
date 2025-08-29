@@ -1,21 +1,23 @@
 from .models import GladiatorType
 from colorama import Fore, Back, Style
 
+def rel_bonus(type1, type2, chain, multiplier):
+    idx1 = chain.index(type1)
+    return multiplier if chain[(idx1 + 1) % len(chain)] == type2 else 1
+
 # Strength calculation logic
 def calculate_strength(card, board, opponent_card):
     base_strength = card.number * board.get_total_bets().get(card.type, 0)
     three_x_chain = [GladiatorType.A, GladiatorType.B, GladiatorType.C, GladiatorType.D, GladiatorType.E]
     two_x_chain = [GladiatorType.A, GladiatorType.C, GladiatorType.E, GladiatorType.B, GladiatorType.D]
 
-    def rel_bonus(type1, type2, chain, multiplier):
-        idx1 = chain.index(type1)
-        return multiplier if chain[(idx1 + 1) % len(chain)] == type2 else 1
-
     bonus_3x = rel_bonus(card.type, opponent_card.type, three_x_chain, 3)
     bonus_2x = rel_bonus(card.type, opponent_card.type, two_x_chain, 2)
     return base_strength * max(bonus_3x, bonus_2x)
 
 def resolve_battles(battles, board, players):
+    three_x_chain = [GladiatorType.A, GladiatorType.B, GladiatorType.C, GladiatorType.D, GladiatorType.E]
+    two_x_chain = [GladiatorType.A, GladiatorType.C, GladiatorType.E, GladiatorType.B, GladiatorType.D]
     for battle in battles:
         if battle.card1 is None or battle.card2 is None or battle.winner is not None:
             continue
@@ -37,6 +39,15 @@ def resolve_battles(battles, board, players):
             # if battle.player2.name == 'P1':
             #     print(Fore.BLACK + Back.YELLOW + f"{battle.player2.coins} coins atm")
             print(f"{battle.player2.name} wins and takes {battle.card1}!" + Style.RESET_ALL)
+        elif str1 == str2:
+            if rel_bonus(battle.card1.type, battle.card2.type, three_x_chain, 3) > 1 or rel_bonus(battle.card1.type, battle.card2.type, two_x_chain, 2) > 1:
+                battle.player1.cards_won.append(battle.card2)
+                battle.winner = battle.player1
+                print(f"{battle.player1.name} wins by type bonus and takes {battle.card2}!" + Style.RESET_ALL)
+            if rel_bonus(battle.card2.type, battle.card1.type, three_x_chain, 3) > 1 or rel_bonus(battle.card2.type, battle.card1.type, two_x_chain, 2) > 1:
+                battle.player2.cards_won.append(battle.card1)
+                battle.winner = battle.player2
+                print(f"{battle.player2.name} wins by type bonus and takes {battle.card1}!" + Style.RESET_ALL)
         else:
             print("Stalemate. No one wins this battle.")
             battle.winner = None
