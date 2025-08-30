@@ -1,0 +1,97 @@
+<!doctype html>
+    <html lang="en"><head><meta charset="utf-8">
+    <title>Game Report</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    
+<style>
+:root {
+  --bg: #0b0f16;
+  --fg: #e6edf3;
+  --muted: #94a3b8;
+  --panel: #0f172a;
+  --border: #1f2937;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+}
+* { box-sizing: border-box; }
+body { margin:0; background:var(--bg); color:var(--fg); }
+.container { max-width: 1400px; margin: 0 auto; padding: 20px; }
+
+.header .h1 { font-size: 22px; margin-bottom: 4px; }
+.header .meta { color: var(--muted); font-size: 12px; margin-bottom: 12px; }
+
+.section {
+  margin: 18px 0 10px 0; padding: 10px 12px; border-left: 4px solid #3b82f6;
+  background: #0b1220; color:#c7d2fe; font-weight:600; border-radius: 6px;
+}
+
+.log { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+table.grid { width: 100%; border-collapse: separate; border-spacing: 0; table-layout: fixed; }
+
+thead th {
+  position: sticky; top: 0;
+  background: #111827; color:#9ca3af; font-weight:600; font-size:12px;
+  border-bottom: 1px solid var(--border);
+  padding: 8px 8px;
+}
+th.col, td.cell { border-right: 1px solid var(--border); }
+th.col:last-child, td.cell:last-child { border-right: none; }
+
+td.cell { padding: 8px 10px; font-family: var(--mono); font-size: 13px; line-height:1.5; }
+td.cell.empty { background: #0f172a; color: transparent; }
+tbody tr:nth-child(2n+1) td.cell.empty { background: #0d1522; }
+tbody tr:hover td { background: #101826; }
+
+.stats {
+  margin-top: 8px; padding: 8px; border: 1px dashed #334155; border-radius: 8px;
+  background: #0b1322;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));  /* roomier & wraps */
+  gap: 8px;
+}
+.stats .stat {
+  display:flex; align-items:center; justify-content:space-between;
+  background:#0e172a; border:1px solid #1f2a44; border-radius:8px; padding: 6px 8px;
+}
+.stats .k { color:#93c5fd; font-size:13px; opacity:0.95; }
+.stats .v { color:#e5e7eb; font-weight:700; font-size:13px; }
+</style>
+
+    </head><body>
+    <div class="container">
+      <div class="header">
+        <div class="h1">Game Report</div>
+        <div class="meta">Generated at 2025-08-30T22:10:33</div>
+      </div>
+    <div class="log"><table class="grid"><thead><tr><th class="col">P1</th><th class="col">P2</th><th class="col">P3</th><th class="col">P4</th><th class="col">Global</th></tr></thead><tbody></tbody></table><div class="section">Round 1</div><table class="grid"><thead><tr><th class="col">P1</th><th class="col">P2</th><th class="col">P3</th><th class="col">P4</th><th class="col">Global</th></tr></thead><tbody><tr><td class="cell empty"></td><td class="cell empty"></td><td class="cell empty"></td><td class="cell empty"></td><td class="cell" style="background:#38F0EE;color:#F07A37">ℹ️ P1 favors P4</td></tr><tr><td class="cell empty"></td><td class="cell empty"></td><td class="cell empty"></td><td class="cell empty"></td><td class="cell" style="background:#38F0EE;color:#F07A37">ℹ️ P2 favors P4</td></tr><tr><td class="cell empty"></td><td class="cell empty"></td><td class="cell empty"></td><td class="cell empty"></td><td class="cell" style="background:#38F0EE;color:#F07A37">ℹ️ P3 favors P4</td></tr><tr><td class="cell empty"></td><td class="cell empty"></td><td class="cell empty"></td><td class="cell empty"></td><td class="cell" style="background:#38F0EE;color:#F07A37">ℹ️ P4 favors P3</td></tr></tbody></table><div class="section">Round 2</div><table class="grid"><thead><tr><th class="col">P1</th><th class="col">P2</th><th class="col">P3</th><th class="col">P4</th><th class="col">Global</th></tr></thead><tbody><tr><td class="cell empty"></td><td class="cell empty"></td><td class="cell empty"></td><td class="cell empty"></td><td class="cell" style="background:#38F0EE;color:#F07A37">ℹ️ P2 favors P1</td></tr><tr><td class="cell empty"></td><td class="cell empty"></td><td class="cell empty"></td><td class="cell empty"></td><td class="cell" style="background:#38F0EE;color:#F07A37">ℹ️ P3 favors P1</td></tr><tr><td class="cell empty"></td><td class="cell empty"></td><td class="cell empty"></td><td class="cell empty"></td><td class="cell" style="background:#38F0EE;color:#F07A37">ℹ️ P4 favors P3</td></tr><tr><td class="cell empty"></td><td class="cell empty"></td><td class="cell empty"></td><td class="cell empty"></td><td class="cell" style="background:#38F0EE;color:#F07A37">ℹ️ P1 favors P4</td></tr></tbody></table><div class="section">Round 3</div><table class="grid"><thead><tr><th class="col">P1</th><th class="col">P2</th><th class="col">P3</th><th class="col">P4</th><th class="col">Global</th></tr></thead><tbody><tr><td class="cell empty"></td><td class="cell empty"></td><td class="cell empty"></td><td class="cell empty"></td><td class="cell" style="background:#38F0EE;color:#F07A37">ℹ️ P3 favors P2</td></tr><tr><td class="cell empty"></td><td class="cell empty"></td><td class="cell empty"></td><td class="cell empty"></td><td class="cell" style="background:#38F0EE;color:#F07A37">ℹ️ P4 favors P3</td></tr><tr><td class="cell empty"></td><td class="cell empty"></td><td class="cell empty"></td><td class="cell empty"></td><td class="cell" style="background:#38F0EE;color:#F07A37">ℹ️ P1 favors P2</td></tr><tr><td class="cell empty"></td><td class="cell empty"></td><td class="cell empty"></td><td class="cell empty"></td><td class="cell" style="background:#38F0EE;color:#F07A37">ℹ️ P2 favors P4</td></tr></tbody></table><div class="section">Round 4</div><table class="grid"><thead><tr><th class="col">P1</th><th class="col">P2</th><th class="col">P3</th><th class="col">P4</th><th class="col">Global</th></tr></thead><tbody><tr><td class="cell empty"></td><td class="cell empty"></td><td class="cell empty"></td><td class="cell empty"></td><td class="cell" style="background:#38F0EE;color:#F07A37">ℹ️ P4 favors P3</td></tr><tr><td class="cell empty"></td><td class="cell empty"></td><td class="cell empty"></td><td class="cell empty"></td><td class="cell" style="background:#38F0EE;color:#F07A37">ℹ️ P1 favors P3</td></tr><tr><td class="cell empty"></td><td class="cell empty"></td><td class="cell empty"></td><td class="cell empty"></td><td class="cell" style="background:#38F0EE;color:#F07A37">ℹ️ P2 favors P3</td></tr><tr><td class="cell empty"></td><td class="cell empty"></td><td class="cell empty"></td><td class="cell empty"></td><td class="cell" style="background:#38F0EE;color:#F07A37">ℹ️ P3 favors P2</td></tr></tbody></table><div class="section">Final Results</div><table class="grid"><thead><tr><th class="col">P1</th><th class="col">P2</th><th class="col">P3</th><th class="col">P4</th><th class="col">Global</th></tr></thead><tbody><tr><td class="cell" style="background:#38F0EE;color:#F07A37">ℹ️ ends with 243 coins and 0 rounds won.
+<div class="stats">
+  <div class="stat"><span class="k">behind</span><span class="v">243</span></div>
+  <div class="stat"><span class="k">front</span><span class="v">0</span></div>
+  <div class="stat"><span class="k">hand</span><span class="v">0</span></div>
+  <div class="stat"><span class="k">won</span><span class="v">0</span></div>
+  <div class="stat"><span class="k">rounds</span><span class="v">0</span></div>
+</div>
+</td><td class="cell empty"></td><td class="cell empty"></td><td class="cell empty"></td><td class="cell empty"></td></tr><tr><td class="cell empty"></td><td class="cell" style="background:#38F0EE;color:#F07A37">ℹ️ ends with 402 coins and 2 rounds won.
+<div class="stats">
+  <div class="stat"><span class="k">behind</span><span class="v">402</span></div>
+  <div class="stat"><span class="k">front</span><span class="v">0</span></div>
+  <div class="stat"><span class="k">hand</span><span class="v">0</span></div>
+  <div class="stat"><span class="k">won</span><span class="v">0</span></div>
+  <div class="stat"><span class="k">rounds</span><span class="v">2</span></div>
+</div>
+</td><td class="cell empty"></td><td class="cell empty"></td><td class="cell empty"></td></tr><tr><td class="cell empty"></td><td class="cell empty"></td><td class="cell" style="background:#38F0EE;color:#F07A37">ℹ️ ends with 382 coins and 1 rounds won.
+<div class="stats">
+  <div class="stat"><span class="k">behind</span><span class="v">382</span></div>
+  <div class="stat"><span class="k">front</span><span class="v">0</span></div>
+  <div class="stat"><span class="k">hand</span><span class="v">0</span></div>
+  <div class="stat"><span class="k">won</span><span class="v">0</span></div>
+  <div class="stat"><span class="k">rounds</span><span class="v">1</span></div>
+</div>
+</td><td class="cell empty"></td><td class="cell empty"></td></tr><tr><td class="cell empty"></td><td class="cell empty"></td><td class="cell empty"></td><td class="cell" style="background:#38F0EE;color:#F07A37">ℹ️ ends with 367 coins and 1 rounds won.
+<div class="stats">
+  <div class="stat"><span class="k">behind</span><span class="v">367</span></div>
+  <div class="stat"><span class="k">front</span><span class="v">0</span></div>
+  <div class="stat"><span class="k">hand</span><span class="v">0</span></div>
+  <div class="stat"><span class="k">won</span><span class="v">0</span></div>
+  <div class="stat"><span class="k">rounds</span><span class="v">1</span></div>
+</div>
+</td><td class="cell empty"></td></tr></tbody></table></div></div></body></html>

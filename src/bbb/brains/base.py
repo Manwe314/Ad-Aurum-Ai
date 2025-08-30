@@ -6,7 +6,7 @@ from ..models import Card, GladiatorType, Battle
 from ..observations import PlayerView
 from colorama import Fore, Back, Style
 from .utils import estimate_future_representation_open_lane
-from ..globals import ADDITIONAL_INFO, TARGET_PLAYER, NUMBER_OF_BATTLES, NUM_PLAYERS, FOCUS_ON_BET_SIZING, FOCUS_ON_CARD_PLAY,FOCUS_ON_BATTLE_INITIAL_BET, FOCUS_ON_ADDITIONAL_BETS
+from ..globals import ADDITIONAL_INFO, TARGET_PLAYER, NUMBER_OF_BATTLES, NUM_PLAYERS, FOCUS_ON_BET_SIZING, FOCUS_ON_CARD_PLAY,FOCUS_ON_BATTLE_INITIAL_BET, FOCUS_ON_ADDITIONAL_BETS, GAME_ENGINE_PIRINTS
 from collections import Counter
 from typing import Iterable
 from enum import Enum as _Enum
@@ -93,7 +93,6 @@ class DeckMemory:
             if shown_number is not None and v != shown_number:
                 continue
             out.append((t, v, cnt))
-        #print(Back.YELLOW + Fore.BLACK + f"possible cards given shown {shown_type} {shown_number}: {out}" + Style.RESET_ALL)
         return out
 
 
@@ -883,7 +882,8 @@ class PlayerBrain:
 
         # 2) ensure deck memory exists and knows my hand
         if not hasattr(self, "brain_memory") or self.brain_memory is None:
-            print(Back.RED + Fore.LIGHTMAGENTA_EX + "Brain memory NOT found! Initializing brain memory" + Style.RESET_ALL)
+            if GAME_ENGINE_PIRINTS:
+                print(Back.RED + Fore.LIGHTMAGENTA_EX + "Brain memory NOT found! Initializing brain memory" + Style.RESET_ALL)
             self.brain_memory = DeckMemory()
             self.brain_memory.remove_cards(view.my_hand.cards)
 

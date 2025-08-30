@@ -4,7 +4,7 @@ from .board import BettingBoard
 from bbb.brains.base import RandomBrain, Traits, PlayerBrain, DeckMemory
 from .observations import PlayerView, build_player_view
 from colorama import Fore, Back, Style
-from .globals import ADDITIONAL_INFO, TARGET_PLAYER, FOCUS_ON_CARD_PLAY
+from .globals import ADDITIONAL_INFO, TARGET_PLAYER, FOCUS_ON_CARD_PLAY, GAME_ENGINE_PIRINTS, LOGGER
 
 def choose_favored_faction(player, other_players):
     if getattr(player, 'brain', None) is not None:
@@ -14,7 +14,9 @@ def choose_favored_faction(player, other_players):
         player.favored_faction = random.choice([p.name for p in other_players if p.name != player.name])
     if player.name == TARGET_PLAYER:
         print(Fore.BLACK + Back.YELLOW + ADDITIONAL_INFO)
-    print(f"{player.name} favors {player.favored_faction}" + Style.RESET_ALL)
+    if GAME_ENGINE_PIRINTS:
+        print(f"{player.name} favors {player.favored_faction}" + Style.RESET_ALL)
+    LOGGER.log_cat("info", f"{player.name} favors {player.favored_faction}")
 
 def choose_betting_type(player, players ,board):
     if getattr(player, 'brain', None) is not None:
@@ -29,7 +31,8 @@ def choose_betting_type(player, players ,board):
     board.place_bet(player, chosen_type, bet_amount)
     if player.name == TARGET_PLAYER:
         print(Fore.BLACK + Back.YELLOW + ADDITIONAL_INFO)
-    print(f"{player.name} bets {bet_amount} on {chosen_type.value}" + Style.RESET_ALL)
+    if GAME_ENGINE_PIRINTS:
+        print(f"{player.name} bets {bet_amount} on {chosen_type.value}" + Style.RESET_ALL)
 
 def player_assign_cards_and_bets(player, all_players, board, round_number, battle_phase_index):
     """
@@ -43,7 +46,8 @@ def player_assign_cards_and_bets(player, all_players, board, round_number, battl
     """
     # If a brain is present, delegate to it
     if not hasattr(player, "brain") or player.brain is None:
-        print(f"[Brain Missing] {player.name} has no brain; using random assignment.")
+        if GAME_ENGINE_PIRINTS:
+            print(f"[Brain Missing] {player.name} has no brain; using random assignment.")
     if hasattr(player, "brain") and player.brain is not None:
         # Build the PlayerView for this player
         view = build_player_view(player, all_players, board, player.battles, round_number, battle_phase_index)
@@ -54,14 +58,16 @@ def player_assign_cards_and_bets(player, all_players, board, round_number, battl
             if FOCUS_ON_CARD_PLAY:
                 print(Back.WHITE + Fore.LIGHTBLACK_EX + f"RESULTS {results}" + Style.RESET_ALL)
         except Exception as e:
-            print(f"[Brain Error] {player.name}: {e}. Falling back to random.")
+            if GAME_ENGINE_PIRINTS:
+                print(f"[Brain Error] {player.name}: {e}. Falling back to random.")
             results = []
 
         if results:
             for (bid, card, show_type, bet) in results:
                 battle = player.battles[bid] if 0 <= bid < len(player.battles) else None
                 if battle is None:
-                    print(Back.RED + Fore.WHITE + f"[Brain Error] {player.name}: invalid battle id {bid}. Skipping." + Style.RESET_ALL)
+                    if GAME_ENGINE_PIRINTS:
+                        print(Back.RED + Fore.WHITE + f"[Brain Error] {player.name}: invalid battle id {bid}. Skipping." + Style.RESET_ALL)
                     continue  # skip unknown battle id
 
                 # Ensure the chosen card is actually in hand
@@ -90,7 +96,8 @@ def player_assign_cards_and_bets(player, all_players, board, round_number, battl
 
                 if player.name == TARGET_PLAYER:
                     print(Fore.BLACK + Back.YELLOW +ADDITIONAL_INFO)
-                print(f"{player.name} (brain) assigns card {card} showing {'type' if show_type else 'number'} "
+                if GAME_ENGINE_PIRINTS:
+                    print(f"{player.name} (brain) assigns card {card} showing {'type' if show_type else 'number'} "
                       f"with bet {bet} in battle against {opponent_name}" + Style.RESET_ALL)
             return  # brain path done
 
@@ -113,14 +120,16 @@ def player_assign_cards_and_bets(player, all_players, board, round_number, battl
             opponent_name = battle.player1.name
         if player.name == TARGET_PLAYER:
             print(Fore.BLACK + Back.YELLOW +ADDITIONAL_INFO)
-        print(f"{player.name} assigns card {card} showing {'type' if show_type else 'number'} "
+        if GAME_ENGINE_PIRINTS:
+            print(f"{player.name} assigns card {card} showing {'type' if show_type else 'number'} "
               f"with bet {bet} in battle against {opponent_name}" + Style.RESET_ALL)
 
         
 
 def player_additional_battle_bets(player, all_players, board, round_number, battle_phase_index):
     if not hasattr(player, "brain") or player.brain is None:
-        print(f"[Brain Missing] {player.name} has no brain; using random assignment.")
+        if GAME_ENGINE_PIRINTS:
+            print(f"[Brain Missing] {player.name} has no brain; using random assignment.")
     if hasattr(player, "brain") and player.brain is not None:
         # Build the PlayerView for this player
         view = build_player_view(player, all_players, board, player.battles, round_number, battle_phase_index)
@@ -130,7 +139,8 @@ def player_additional_battle_bets(player, all_players, board, round_number, batt
             if FOCUS_ON_CARD_PLAY:
                 print(Back.WHITE + Fore.LIGHTBLACK_EX + f"RESULTS {results}" + Style.RESET_ALL)
         except Exception as e:
-            print(f"[Brain Error] {player.name}: {e}. Falling back to no additional bets.")
+            if GAME_ENGINE_PIRINTS:
+                print(f"[Brain Error] {player.name}: {e}. Falling back to no additional bets.")
             results = {}
 
         # Apply additional bets
@@ -140,7 +150,8 @@ def player_additional_battle_bets(player, all_players, board, round_number, batt
             
             battle = player.battles[bid] if 0 <= bid < len(player.battles) else None
             if battle is None:
-                print(Back.RED + Fore.WHITE + f"[Brain Error] {player.name}: invalid battle id {bid}. Skipping." + Style.RESET_ALL)
+                if GAME_ENGINE_PIRINTS:
+                    print(Back.RED + Fore.WHITE + f"[Brain Error] {player.name}: invalid battle id {bid}. Skipping." + Style.RESET_ALL)
                 continue
             
             # Clamp to available bankroll (safety – brain already budgets, but engine enforces)
@@ -159,12 +170,11 @@ def player_additional_battle_bets(player, all_players, board, round_number, batt
 
             if player.name == TARGET_PLAYER:
                 print(Fore.BLACK + Back.YELLOW +ADDITIONAL_INFO)
-            print(f"{player.name} adds +{spend} to battle vs "
+            if GAME_ENGINE_PIRINTS:
+                print(f"{player.name} adds +{spend} to battle vs "
                   f"{battle.player2.name if battle.player1 is player else battle.player1.name} "
                   f"(now {battle.bet1}-{battle.bet2})" + Style.RESET_ALL)
     for battle in player.battles:
-        # if player.coins <= 0:
-        #     print(Fore.RED + Back.GREEN + f"{player.name} has no coins left to bet." + Style.RESET_ALL)
         additional_bet = min(1, player.coins)
         player.coins -= additional_bet
         if player == battle.player1:
@@ -173,4 +183,5 @@ def player_additional_battle_bets(player, all_players, board, round_number, batt
             battle.bet2 += additional_bet
         if player.name == TARGET_PLAYER:
             print(Fore.BLACK + Back.YELLOW + ADDITIONAL_INFO)
-        print(f"{player.name} adds additional bet {additional_bet} in battle against {battle.player2.name if player == battle.player1 else battle.player1.name}" + Style.RESET_ALL)
+        if GAME_ENGINE_PIRINTS:            
+            print(f"{player.name} adds additional bet {additional_bet} in battle against {battle.player2.name if player == battle.player1 else battle.player1.name}" + Style.RESET_ALL)

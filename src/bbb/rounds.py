@@ -1,6 +1,6 @@
 from .models import GladiatorType
 from colorama import Fore, Back, Style
-from .globals import ADDITIONAL_INFO, TARGET_PLAYER
+from .globals import ADDITIONAL_INFO, TARGET_PLAYER, GAME_ENGINE_PIRINTS
 
 def evaluate_favored_factions(players):
     for player in players:
@@ -10,11 +10,13 @@ def evaluate_favored_factions(players):
                 player.coins += gained
                 if player.name == TARGET_PLAYER:
                     print(Fore.BLACK + Back.YELLOW + ADDITIONAL_INFO)
-                print(f"{player.name} gains {gained} coins for favoring {player.favored_faction}" + Style.RESET_ALL)
+                if GAME_ENGINE_PIRINTS:
+                    print(f"{player.name} gains {gained} coins for favoring {player.favored_faction}" + Style.RESET_ALL)
                 break
 
 def determine_round_winner(players, board):
-    print("\n--- Determining Round Winner ---")
+    if GAME_ENGINE_PIRINTS:
+        print("\n--- Determining Round Winner ---")
     max_score = -1
     winners = []
 
@@ -22,7 +24,8 @@ def determine_round_winner(players, board):
         total_value = sum(card.number for card in player.cards_won)
         if player.name == TARGET_PLAYER:
             print(Fore.BLACK + Back.YELLOW + ADDITIONAL_INFO)
-        print(f"{player.name} total card value: {total_value}" + Style.RESET_ALL)
+        if GAME_ENGINE_PIRINTS:
+            print(f"{player.name} total card value: {total_value}" + Style.RESET_ALL)
         if total_value > max_score:
             max_score = total_value
             winners = [player]
@@ -40,9 +43,8 @@ def determine_round_winner(players, board):
                 for _, amount in entries:
                     total_gain += amount
         winner.front_coins += total_gain
-        # if winner.name == 'P1':
-        #     print(Back.CYAN + f"{total_gain} given to {winner.name} atm: {winner.front_coins}" + Style.RESET_ALL)
-        print(f"{winner.name} wins the round and collects {total_gain} coins!")
+        if GAME_ENGINE_PIRINTS:
+            print(f"{winner.name} wins the round and collects {total_gain} coins!")
         return
 
     def rel_sum(g_type, others):
@@ -83,11 +85,11 @@ def determine_round_winner(players, board):
 
     for p in final_winners:
         p.front_coins += split_gain
-        # if p.name == 'P1':
-        #     print(Back.CYAN + f"{split_gain} given to {p.name} atm: {p.front_coins}" + Style.RESET_ALL)
         p.rounds_won += 1
 
     if len(final_winners) == 1:
-        print(f"{final_winners[0].name} wins tie-break and gets {split_gain} coins!")
+        if GAME_ENGINE_PIRINTS:
+            print(f"{final_winners[0].name} wins tie-break and gets {split_gain} coins!")
     else:
-        print(f"Tie remains among {[p.name for p in final_winners]}. Each receives {split_gain} coins.")
+        if GAME_ENGINE_PIRINTS:
+            print(f"Tie remains among {[p.name for p in final_winners]}. Each receives {split_gain} coins.")

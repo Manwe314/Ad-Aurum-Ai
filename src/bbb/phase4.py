@@ -2,6 +2,7 @@ from .decisions import player_assign_cards_and_bets, player_additional_battle_be
 from .combat import resolve_battles, correct_bets, give_total_domination
 from .brains.base import PlayerBrain
 from colorama import Fore, Back, Style
+from .globals import GAME_ENGINE_PIRINTS
 
 def equalize_all_battles(battles, players, board, round_number, battle_phase_index):
     """
@@ -47,8 +48,8 @@ def equalize_all_battles(battles, players, board, round_number, battle_phase_ind
                 break
 
         if my_bview is None or not hasattr(acting, "brain") or acting.brain is None:
-            # Fallback: if no brain or we failed to locate the view, default to old behavior:
-            print(Back.RED + Fore.WHITE +  f"defaulting to common behaviour" + Style.RESET_ALL)
+            if GAME_ENGINE_PIRINTS:
+                print(Back.RED + Fore.WHITE +  f"defaulting to common behaviour" + Style.RESET_ALL)
             if acting.coins >= deficit:
                 # match
                 spend = deficit
@@ -59,8 +60,8 @@ def equalize_all_battles(battles, players, board, round_number, battle_phase_ind
                 else:
                     battle.bet1 += spend
             else:
-                # concede
-                print(f"{acting.name} concedes!")
+                if GAME_ENGINE_PIRINTS:
+                    print(f"{acting.name} concedes!")
                 if acting is battle.player2:
                     battle.player1.cards_won.append(battle.card2)
                     battle.winner = battle.player1
@@ -77,12 +78,13 @@ def equalize_all_battles(battles, players, board, round_number, battle_phase_ind
                 deficit_to_match=deficit,
             )
         except Exception as e:
-            print(f"[Brain Error] {acting.name} equalize: {e}. Falling back to default.")
+            if GAME_ENGINE_PIRINTS:
+                print(f"[Brain Error] {acting.name} equalize: {e}. Falling back to default.")
             fight, suggested_add = (acting.coins >= deficit), deficit
 
         if not fight:
-            # Concede immediately
-            print(f"{acting.name} concedes!")
+            if GAME_ENGINE_PIRINTS:
+                print(f"{acting.name} concedes!")
             if acting is battle.player2:
                 battle.player1.cards_won.append(battle.card2)
                 battle.winner = battle.player1
@@ -111,8 +113,8 @@ def equalize_all_battles(battles, players, board, round_number, battle_phase_ind
                 else:
                     battle.bet1 += spend
             else:
-                # coins == 0 -> bank adds 1 to their side (no bankroll change)
-                print(Back.RED + Fore.WHITE +  f"{acting.name} fights with bank support (1)." + Style.RESET_ALL)
+                if GAME_ENGINE_PIRINTS:
+                    print(Back.RED + Fore.WHITE +  f"{acting.name} fights with bank support (1)." + Style.RESET_ALL)
                 if acting is battle.player2:
                     battle.bet2 += 1
                 else:
@@ -120,9 +122,11 @@ def equalize_all_battles(battles, players, board, round_number, battle_phase_ind
 
 
 def play_battle_phase(players, battles, board, round_num, battle_index):
-    print(f"\n>>> Battle Phase {battle_index + 1} in Round {round_num}")
+    if GAME_ENGINE_PIRINTS:
+        print(f"\n>>> Battle Phase {battle_index + 1} in Round {round_num}")
     for player in players:
-        print(f"player {player.name} has {player.front_coins}")
+        if GAME_ENGINE_PIRINTS:
+            print(f"player {player.name} has {player.front_coins}")
         player_assign_cards_and_bets(player, players, board, round_num, battle_index)
     for player in reversed(players):
         player_additional_battle_bets(player, players, board, round_num, battle_index)

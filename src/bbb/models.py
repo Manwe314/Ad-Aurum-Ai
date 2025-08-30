@@ -73,7 +73,6 @@ class Player:
         self.battles.clear()
         self.favored_faction = None
         self.cards_won.clear()
-        # print(Back.BLUE + Fore.WHITE + f"{self.name} resets with {self.front_coins} taken back" + Style.RESET_ALL)
         self.coins += self.front_coins
         self.front_coins = 0
 

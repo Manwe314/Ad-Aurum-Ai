@@ -7,8 +7,10 @@ from .brains.base import PlayerBrain, Traits
 import random
 from typing import List, Dict, Optional
 from colorama import Fore, Back, Style
-from .globals import ADDITIONAL_INFO, TARGET_PLAYER, GAME_ENGINE_PIRINTS
+from .globals import ADDITIONAL_INFO, TARGET_PLAYER, GAME_ENGINE_PIRINTS, LOGGER
 from .brains.base import DeckMemory
+from .utils.logger_html import HtmlLogger
+
 
 
 def rotate_players(players: list) -> list:
@@ -18,10 +20,12 @@ def rotate_players(players: list) -> list:
 
 
 def simulate_game(num_players=4, num_battles=3, starting_coins=10):
-    print("=== Starting Simulation ===")
+    if GAME_ENGINE_PIRINTS:
+        print("=== Starting Simulation ===")
     players = [Player(f"P{i+1}", starting_coins) for i in range(num_players)]
     board = BettingBoard()
     deck = Deck()
+    names = []
 
     for i, p in enumerate(players):
         p.brain = PlayerBrain(rng=random.Random(1000 + i), traits=Traits(
@@ -32,9 +36,14 @@ def simulate_game(num_players=4, num_battles=3, starting_coins=10):
             ev_adherence = 60,
             exploration = 3,
         ))
+        names.append(p.name)
+    
+    LOGGER.set_players(names)
         
     for round_num in range(1, num_players + 1):
-        print(f"\n--- Round {round_num} ---")
+        if GAME_ENGINE_PIRINTS:
+            print(f"\n--- Round {round_num} ---")
+        LOGGER.section(f"Round {round_num}")
         board.reset()
         deck = Deck()
         deck.shuffle()
@@ -82,11 +91,14 @@ def simulate_game(num_players=4, num_battles=3, starting_coins=10):
     for player in players:
             player.reset_round()
 
+    LOGGER.section("Final Results")
     for player in players:
         if player.name == TARGET_PLAYER:
             print(Fore.BLACK + Back.YELLOW + ADDITIONAL_INFO)
         if GAME_ENGINE_PIRINTS:
             print(f"{player.name} ends with {player.coins} coins and {player.rounds_won} rounds won." + Style.RESET_ALL)
+        LOGGER.log_player(player.name, f"ends with {player.coins} coins and {player.rounds_won} rounds won.", category="info", stats=True, player_obj=player)
+    LOGGER.save()
 
 if __name__ == "__main__":
     simulate_game(num_players=4, num_battles=3, starting_coins=10)
