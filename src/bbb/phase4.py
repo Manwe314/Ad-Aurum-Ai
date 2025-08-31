@@ -2,7 +2,7 @@ from .decisions import player_assign_cards_and_bets, player_additional_battle_be
 from .combat import resolve_battles, correct_bets, give_total_domination
 from .brains.base import PlayerBrain
 from colorama import Fore, Back, Style
-from .globals import GAME_ENGINE_PIRINTS
+from .globals import GAME_ENGINE_PIRINTS, LOGGER, LOGGING
 
 def equalize_all_battles(battles, players, board, round_number, battle_phase_index):
     """
@@ -85,6 +85,8 @@ def equalize_all_battles(battles, players, board, round_number, battle_phase_ind
         if not fight:
             if GAME_ENGINE_PIRINTS:
                 print(f"{acting.name} concedes!")
+            if LOGGING:
+                LOGGER.log_cat("battle", f"Concedes battle against {other.name}", player=acting.name)
             if acting is battle.player2:
                 battle.player1.cards_won.append(battle.card2)
                 battle.winner = battle.player1
@@ -98,16 +100,21 @@ def equalize_all_battles(battles, players, board, round_number, battle_phase_ind
             # Must match fully (brains cannot choose to half-match if they can cover)
             spend = deficit
             acting.coins -= spend
+            if LOGGING:
+                LOGGER.log_cat("battle", f"Matches bet to {max(battle.bet1, battle.bet2)} against {other.name}", player=acting.name)
             if acting is battle.player2:
                 battle.bet2 += spend
             else:
                 battle.bet1 += spend
         else:
             # Cannot fully match
+            battle.fight_regardless = True
             if acting.coins > 0:
                 # Add what they can; keep battle alive with unequal bets
                 spend = acting.coins
                 acting.coins = 0
+                if LOGGING:
+                    LOGGER.log_cat("warn", f"Fights with Not enough Coins ({spend}).", player=acting.name)
                 if acting is battle.player2:
                     battle.bet2 += spend
                 else:
@@ -115,6 +122,8 @@ def equalize_all_battles(battles, players, board, round_number, battle_phase_ind
             else:
                 if GAME_ENGINE_PIRINTS:
                     print(Back.RED + Fore.WHITE +  f"{acting.name} fights with bank support (1)." + Style.RESET_ALL)
+                if LOGGING:
+                    LOGGER.log_cat("warn", f"Fights with bank support (1).", player=acting.name)
                 if acting is battle.player2:
                     battle.bet2 += 1
                 else:
@@ -124,6 +133,8 @@ def equalize_all_battles(battles, players, board, round_number, battle_phase_ind
 def play_battle_phase(players, battles, board, round_num, battle_index):
     if GAME_ENGINE_PIRINTS:
         print(f"\n>>> Battle Phase {battle_index + 1} in Round {round_num}")
+    if LOGGING:
+        LOGGER.section(f"Battle Phase {battle_index + 1}")
     for player in players:
         if GAME_ENGINE_PIRINTS:
             print(f"player {player.name} has {player.front_coins}")

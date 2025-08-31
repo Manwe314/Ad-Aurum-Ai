@@ -1,6 +1,6 @@
 from .models import GladiatorType
 from colorama import Fore, Back, Style
-from .globals import ADDITIONAL_INFO, TARGET_PLAYER, GAME_ENGINE_PIRINTS
+from .globals import ADDITIONAL_INFO, TARGET_PLAYER, GAME_ENGINE_PIRINTS, LOGGER, LOGGING
 
 def evaluate_favored_factions(players):
     for player in players:
@@ -12,6 +12,8 @@ def evaluate_favored_factions(players):
                     print(Fore.BLACK + Back.YELLOW + ADDITIONAL_INFO)
                 if GAME_ENGINE_PIRINTS:
                     print(f"{player.name} gains {gained} coins for favoring {player.favored_faction}" + Style.RESET_ALL)
+                if LOGGING:
+                    LOGGER.log_cat("success", f"Gains {gained} coins for favoring {player.favored_faction}", player=player.name)
                 break
 
 def determine_round_winner(players, board):
@@ -26,6 +28,8 @@ def determine_round_winner(players, board):
             print(Fore.BLACK + Back.YELLOW + ADDITIONAL_INFO)
         if GAME_ENGINE_PIRINTS:
             print(f"{player.name} total card value: {total_value}" + Style.RESET_ALL)
+        if LOGGING:
+            LOGGER.log_cat("info", f"Total cards won's value: {total_value}", player=player.name)
         if total_value > max_score:
             max_score = total_value
             winners = [player]
@@ -45,6 +49,8 @@ def determine_round_winner(players, board):
         winner.front_coins += total_gain
         if GAME_ENGINE_PIRINTS:
             print(f"{winner.name} wins the round and collects {total_gain} coins!")
+        if LOGGING:
+            LOGGER.log_cat("success", f"Wins the round and collects {total_gain} coins!", player=winner.name, stats=True, player_obj=winner)
         return
 
     def rel_sum(g_type, others):
@@ -90,6 +96,10 @@ def determine_round_winner(players, board):
     if len(final_winners) == 1:
         if GAME_ENGINE_PIRINTS:
             print(f"{final_winners[0].name} wins tie-break and gets {split_gain} coins!")
+        if LOGGING:
+            LOGGER.log_cat("success", f"Wins tie-break and gets {split_gain} coins!", player=final_winners[0].name)
     else:
         if GAME_ENGINE_PIRINTS:
             print(f"Tie remains among {[p.name for p in final_winners]}. Each receives {split_gain} coins.")
+        if LOGGING:
+            LOGGER.log_cat("success", f"Tie remains among {[p.name for p in final_winners]}. Each receives {split_gain} coins.")

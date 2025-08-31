@@ -6,7 +6,7 @@ from ..models import Card, GladiatorType, Battle
 from ..observations import PlayerView
 from colorama import Fore, Back, Style
 from .utils import estimate_future_representation_open_lane
-from ..globals import ADDITIONAL_INFO, TARGET_PLAYER, NUMBER_OF_BATTLES, NUM_PLAYERS, FOCUS_ON_BET_SIZING, FOCUS_ON_CARD_PLAY,FOCUS_ON_BATTLE_INITIAL_BET, FOCUS_ON_ADDITIONAL_BETS, GAME_ENGINE_PIRINTS
+from ..globals import ADDITIONAL_INFO, TARGET_PLAYER, NUMBER_OF_BATTLES, NUM_PLAYERS, FOCUS_ON_BET_SIZING, FOCUS_ON_CARD_PLAY,FOCUS_ON_BATTLE_INITIAL_BET, FOCUS_ON_ADDITIONAL_BETS, GAME_ENGINE_PIRINTS, FOCUS_ON_EQUALIZING_BETS
 from collections import Counter
 from typing import Iterable
 from enum import Enum as _Enum
@@ -1182,7 +1182,7 @@ class PlayerBrain:
             dom_gap = self._multiplier(my_card.type, opp_rep) - self._multiplier(opp_rep, my_card.type)
     
         ww_ev              = 1.0
-        ww_deficit_pen     = 0.85   # linear pain from the deficit we must call
+        ww_deficit_pen     = 0.33   # linear pain from the deficit we must call
         ww_stubborn_boost  = 0.60   # how strongly stubbornness offsets deficit/EV
         ww_liq_call_cost   = 0.35   # liquidity pain of committing coins to match
         ww_bank_bias       = 0.30   # small bias to fight if bank can stake 1 (when behind==0)
@@ -1206,6 +1206,8 @@ class PlayerBrain:
     
         # Net score for fighting
         fight_score = ev_call - call_cost + stubborn_offset
+        if FOCUS_ON_EQUALIZING_BETS:
+            print(Back.GREEN + Fore.LIGHTYELLOW_EX + f"{view.me} Equalize decision vs {opp_name}: ev_call={ev_call:.2f} call_cost={call_cost:.2f} stubborn_offset={stubborn_offset:.2f} final score: {ev_call - call_cost + stubborn_offset:.2f}" + Style.RESET_ALL)
     
         # A tiny bias to keep fighting if we’re broke and bank can stake 1
         if behind == 0:

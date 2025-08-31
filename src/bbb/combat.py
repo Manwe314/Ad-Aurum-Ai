@@ -1,6 +1,6 @@
 from .models import GladiatorType
 from colorama import Fore, Back, Style
-from .globals import GAME_ENGINE_PIRINTS
+from .globals import GAME_ENGINE_PIRINTS, LOGGER, LOGGING
 
 def rel_bonus(type1, type2, chain, multiplier):
     idx1 = chain.index(type1)
@@ -55,19 +55,28 @@ def resolve_battles(battles, board, players):
             if GAME_ENGINE_PIRINTS:
                 print("Stalemate. No one wins this battle.")
             battle.winner = None
+        if LOGGING:
+            LOGGER.log_cat("battle", f"Resolving: {battle.player1.name} With {battle.card1} power {str1} Vs {battle.player2.name} with {battle.card2} power {str2}")
+
 
 def correct_bets(battle):
     if battle.winner is None:
         battle.player1.front_coins += battle.bet1
         battle.player2.front_coins += battle.bet2
+        if LOGGING:
+            LOGGER.log_cat("warn", f"Battle ended in stalemate. Bets returned. {battle.player1.name} gets back {battle.bet1}, {battle.player2.name} gets back {battle.bet2}.")
     if battle.winner == battle.player1:
         battle.player1.front_coins += battle.bet1 + battle.bet2
-        if battle.bet1 > battle.bet2:
+        if battle.bet1 > battle.bet2 and battle.fight_regardless:
             battle.player1.front_coins += (battle.bet1 - battle.bet2)
+        if LOGGING:
+            LOGGER.log_cat("battle", f"Battle won. Gaining {battle.bet1 + battle.bet2 + (battle.bet1 - battle.bet2 if battle.bet1 > battle.bet2 and battle.fight_regardless else 0)} coins.", player=battle.player1.name, stats=True, player_obj=battle.player1)
     if battle.winner == battle.player2:
         battle.player2.front_coins += battle.bet1 + battle.bet2
-        if battle.bet2 > battle.bet1:
+        if battle.bet2 > battle.bet1 and battle.fight_regardless:
             battle.player2.front_coins += (battle.bet2 - battle.bet1)
+        if LOGGING:
+            LOGGER.log_cat("battle", f"Battle won. Gaining {battle.bet1 + battle.bet2 + (battle.bet1 - battle.bet2 if battle.bet1 > battle.bet2 and battle.fight_regardless else 0)} coins.", player=battle.player2.name, stats=True, player_obj=battle.player2)
 
 def give_total_domination(player, board):
     max_bet = 0
@@ -75,10 +84,14 @@ def give_total_domination(player, board):
     for g_type, entries in board.bets.items():
         for _, amount in entries:
             if amount >= max_bet:
-                second_max_bet = max_bet
                 max_bet = amount
-            elif amount > second_max_bet:
+        for _, amount in entries:
+            if amount > second_max_bet and amount < max_bet:
                 second_max_bet = amount
+    if second_max_bet == 0:
+        second_max_bet = max_bet
     if GAME_ENGINE_PIRINTS:
         print(Back.BLUE +  f"{player.name} achieves total domination! Gains {second_max_bet} coins." + Style.RESET_ALL)
+    if LOGGING:
+        LOGGER.log_cat("success", f"Achieves total domination! Gains {second_max_bet} coins.", player=player.name)
     player.front_coins += second_max_bet

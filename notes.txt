@@ -1,7 +1,7 @@
-add global variables for printing rules
+Logger for P win and P loose compounding
 
-fix coins unreal addage
-additional bets and concede choice, inspect them
-clean up print statements
-get html logging working and wire it in
-get to a final working state.
+train model
+
+presentation
+
+

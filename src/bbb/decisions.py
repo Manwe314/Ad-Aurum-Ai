@@ -4,7 +4,7 @@ from .board import BettingBoard
 from bbb.brains.base import RandomBrain, Traits, PlayerBrain, DeckMemory
 from .observations import PlayerView, build_player_view
 from colorama import Fore, Back, Style
-from .globals import ADDITIONAL_INFO, TARGET_PLAYER, FOCUS_ON_CARD_PLAY, GAME_ENGINE_PIRINTS, LOGGER
+from .globals import ADDITIONAL_INFO, TARGET_PLAYER, FOCUS_ON_CARD_PLAY, GAME_ENGINE_PIRINTS, LOGGER, LOGGING
 
 def choose_favored_faction(player, other_players):
     if getattr(player, 'brain', None) is not None:
@@ -16,7 +16,8 @@ def choose_favored_faction(player, other_players):
         print(Fore.BLACK + Back.YELLOW + ADDITIONAL_INFO)
     if GAME_ENGINE_PIRINTS:
         print(f"{player.name} favors {player.favored_faction}" + Style.RESET_ALL)
-    LOGGER.log_cat("info", f"{player.name} favors {player.favored_faction}")
+    if LOGGING:
+        LOGGER.log_cat("info", f"Favoring {player.favored_faction}", player=player.name)
 
 def choose_betting_type(player, players ,board):
     if getattr(player, 'brain', None) is not None:
@@ -33,6 +34,8 @@ def choose_betting_type(player, players ,board):
         print(Fore.BLACK + Back.YELLOW + ADDITIONAL_INFO)
     if GAME_ENGINE_PIRINTS:
         print(f"{player.name} bets {bet_amount} on {chosen_type.value}" + Style.RESET_ALL)
+    if LOGGING:
+        LOGGER.log_cat("bet", f"Betting {bet_amount} on {chosen_type.value}", player=player.name)
 
 def player_assign_cards_and_bets(player, all_players, board, round_number, battle_phase_index):
     """
@@ -99,6 +102,8 @@ def player_assign_cards_and_bets(player, all_players, board, round_number, battl
                 if GAME_ENGINE_PIRINTS:
                     print(f"{player.name} (brain) assigns card {card} showing {'type' if show_type else 'number'} "
                       f"with bet {bet} in battle against {opponent_name}" + Style.RESET_ALL)
+                if LOGGING:
+                    LOGGER.log_cat("card_play", f"Assigns card {card} showing {'type' if show_type else 'number'} with bet {bet} in battle against {opponent_name}", player=player.name)
             return  # brain path done
 
     # --- Fallback: your original random logic (unchanged) ---
@@ -174,14 +179,17 @@ def player_additional_battle_bets(player, all_players, board, round_number, batt
                 print(f"{player.name} adds +{spend} to battle vs "
                   f"{battle.player2.name if battle.player1 is player else battle.player1.name} "
                   f"(now {battle.bet1}-{battle.bet2})" + Style.RESET_ALL)
-    for battle in player.battles:
-        additional_bet = min(1, player.coins)
-        player.coins -= additional_bet
-        if player == battle.player1:
-            battle.bet1 += additional_bet
-        else:
-            battle.bet2 += additional_bet
-        if player.name == TARGET_PLAYER:
-            print(Fore.BLACK + Back.YELLOW + ADDITIONAL_INFO)
-        if GAME_ENGINE_PIRINTS:            
-            print(f"{player.name} adds additional bet {additional_bet} in battle against {battle.player2.name if player == battle.player1 else battle.player1.name}" + Style.RESET_ALL)
+            if LOGGING:
+                LOGGER.log_cat("bet", f"Adds +{spend} to battle vs {battle.player2.name if battle.player1 is player else battle.player1.name} (now {battle.bet1}-{battle.bet2})", player=player.name)
+    else:
+        for battle in player.battles:
+            additional_bet = min(1, player.coins)
+            player.coins -= additional_bet
+            if player == battle.player1:
+                battle.bet1 += additional_bet
+            else:
+                battle.bet2 += additional_bet
+            if player.name == TARGET_PLAYER:
+                print(Fore.BLACK + Back.YELLOW + ADDITIONAL_INFO)
+            if GAME_ENGINE_PIRINTS:            
+                print(f"{player.name} adds additional bet {additional_bet} in battle against {battle.player2.name if player == battle.player1 else battle.player1.name}" + Style.RESET_ALL)

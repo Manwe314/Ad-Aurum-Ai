@@ -31,6 +31,7 @@ class Battle:
         self.card1_shows_type = True
         self.card2_shows_type = True
         self.winner = None  # Track who won this battle
+        self.fight_regardless = False  # New attribute to indicate forced fight
 
     def set_cards(self, card1, show1, card2, show2):
         self.card1 = card1
@@ -51,6 +52,7 @@ class Battle:
         self.bet2 = 0
         self.card1_shows_type = True
         self.card2_shows_type = True
+        self.fight_regardless = False
 
     def __repr__(self):
         return f"Battle({self.player1.name} vs {self.player2.name}, Bet1: {self.bet1}, Bet2: {self.bet2})"
