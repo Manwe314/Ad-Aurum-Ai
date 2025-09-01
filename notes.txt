@@ -1,7 +1,15 @@
 Logger for P win and P loose compounding
 
-train model
+make a Experiment function to simulate games and return winrate
 
-presentation
+use a library for bayesian optimization
+
+make optimization loop
+
+anti overfitting measures
+
+best model evolution steps
+
+
 
 
