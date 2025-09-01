@@ -6,7 +6,7 @@ from ..models import Card, GladiatorType, Battle
 from ..observations import PlayerView
 from colorama import Fore, Back, Style
 from .utils import estimate_future_representation_open_lane
-from ..globals import ADDITIONAL_INFO, TARGET_PLAYER, NUMBER_OF_BATTLES, NUM_PLAYERS, FOCUS_ON_BET_SIZING, FOCUS_ON_CARD_PLAY,FOCUS_ON_BATTLE_INITIAL_BET, FOCUS_ON_ADDITIONAL_BETS, GAME_ENGINE_PIRINTS, FOCUS_ON_EQUALIZING_BETS
+from ..globals import ADDITIONAL_INFO, TARGET_PLAYER, NUMBER_OF_BATTLES, NUM_PLAYERS, FOCUS_ON_BET_SIZING, FOCUS_ON_CARD_PLAY,FOCUS_ON_BATTLE_INITIAL_BET, FOCUS_ON_ADDITIONAL_BETS, GAME_ENGINE_PIRINTS, FOCUS_ON_EQUALIZING_BETS, WW_VARS
 from collections import Counter
 from typing import Iterable
 from enum import Enum as _Enum
@@ -139,7 +139,7 @@ class PlayerBrain:
 
         # --- Blend via risk tolerance and a single weight ---
         risk = (getattr(self, "traits", None).risk_tolerance / 100.0) if getattr(self, "traits", None) else 0.5
-        ww_last_bias = 1.2  # single tunable weight: higher => risk tilts more strongly to "last"
+        ww_last_bias = WW_VARS.get("ww_last_bias") # single tunable weight: higher => risk tilts more strongly to "last"
 
         # Logistic switch centered at risk=0.5
         x = (risk - 0.5) * 2.0  # map risk to [-1, +1]
@@ -171,9 +171,11 @@ class PlayerBrain:
 
         # Normalize hand support: combine count and value
         # Weight count slightly more to reflect multiple deployments across battles
+        ww_hand_count = WW_VARS.get("ww_hand_count") # 1.0
+        ww_hand_strength = WW_VARS.get("ww_hand_strength") # 0.3
         hand_support: Dict[GladiatorType, float] = {}
         for t in GladiatorType:
-            hand_support[t] = 1.0 * hand_counts[t] + 0.3 * hand_strength[t] # hard coded weights
+            hand_support[t] = ww_hand_count * hand_counts[t] + ww_hand_strength * hand_strength[t] 
 
         # --- 2) Counter power versus existing board bets (public) ---
         # If others have bet on types U with amounts a_U, favor types T that beat U
@@ -210,20 +212,20 @@ class PlayerBrain:
         deception_penalty[best_hand_type] = 0.5 * (traits.bluffiness / 100.0) # hard coded weight
 
         # --- Combine scores with trait-driven weights ---
-        ww_hand   = 1.0
-        ww_open = 0.8 * (1.0 - traits.herding / 100.0)
-        ww_countp = 0.9                                        # base for counter_power
+        ww_hand   = WW_VARS.get("ww_hand")   # 1.0
+        ww_open = WW_VARS.get("ww_open") # 0.8
+        ww_countp = WW_VARS.get("ww_countp")  # base for counter_power
         # Tilt countering more for higher risk_tolerance (seek edges vs others)
-        ww_counter = ww_countp * (0.5 + 0.5 * (traits.risk_tolerance / 100.0))
-        ww_bluff = 1.0 * (traits.bluffiness / 100.0)
+        counter = ww_countp * (0.5 + 0.5 * (traits.risk_tolerance / 100.0))
+        ww_bluff = WW_VARS.get("ww_bluff") # 1.0 
 
         scores: Dict[GladiatorType, float] = {}
         for t in GladiatorType:
             s = 0.0
             s += ww_hand   * hand_support[t]
-            s += ww_counter * counter_power[t]
-            s += ww_open * open_lane_bonus[t]
-            s -= ww_bluff  * deception_penalty[t]
+            s += counter * counter_power[t]
+            s += (ww_open * (1.0 - traits.herding / 100.0)) * open_lane_bonus[t]
+            s -= (ww_bluff * (traits.bluffiness / 100.0))  * deception_penalty[t]
             scores[t] = s
         if FOCUS_ON_BET_SIZING:
             print(f"Scores for {view.me}: {scores}")
@@ -323,7 +325,7 @@ class PlayerBrain:
             BT_star = final_totals.get(chosen_type, 0) 
             Btot_star = sum(final_totals.values())
             gain =  Btot_star - BT_star - a
-            ww_round = 0.96                              # small weight; tune if needed
+            ww_round = WW_VARS.get("ww_round")                              # small weight; tune if needed
             s = ww_round * gain
             if FOCUS_ON_BET_SIZING:
                 print(Back.MAGENTA + Fore.LIGHTGREEN_EX + f"{view.me} a={a}: gain={gain}" + Style.RESET_ALL)
@@ -355,7 +357,7 @@ class PlayerBrain:
 
             # Inverted-U: EV ∝ win_prob * (1 - concede_prob)
             battle_ev = NT_eff * Vavg * (p_win * (1.0 - p_concede)) * baseline_pot
-            ww_battle = 0.8  # reduce impact so it doesn’t swamp costs
+            ww_battle = WW_VARS.get("ww_battle")  # reduce impact so it doesn’t swamp costs
             s += ww_battle * battle_ev
             if FOCUS_ON_BET_SIZING:
                 print(Back.MAGENTA + Fore.LIGHTGREEN_EX + f"{view.me} a={a}: Δ={Δ:.2f} p_win={p_win:.2f} p_conc={p_concede:.2f} battleEV={battle_ev:.2f}" + Style.RESET_ALL)
@@ -382,7 +384,7 @@ class PlayerBrain:
                         second_max_bet = amount
                 S2 = second_max_bet
                 dom_ev = opportunities * p3 * S2
-                ww_dom = 0.50  # capped impact
+                ww_dom = WW_VARS.get("ww_dom")  # capped impact
                 s += ww_dom * dom_ev
                 if FOCUS_ON_BET_SIZING:
                     print(Back.MAGENTA + Fore.LIGHTGREEN_EX + f"{view.me} a={a}: dom opp={opportunities} p3={p3:.2f} S2={S2:.2f} domEV={dom_ev:.2f}" + Style.RESET_ALL)
@@ -395,14 +397,14 @@ class PlayerBrain:
             Rmin = reserve_base + reserve_per_battle * NUMBER_OF_BATTLES   # assume 3 battles; wire your setting if available
             short = max(0, a - max(0, behind - Rmin))
             reserve_penalty = (2.0 + 2.0 * (self.traits.ev_adherence / 100.0)) * short
-            ww_liquidty = 0.8
+            ww_liquidty = WW_VARS.get("ww_liquidty")  # tune if needed
             s -= (lam * a + reserve_penalty) * ww_liquidty
             if FOCUS_ON_BET_SIZING:
                 print(Back.MAGENTA + Fore.LIGHTGREEN_EX + f"{view.me} a={a}: liq={lam*a:.2f} reserve_penalty={reserve_penalty:.2f}" + Style.RESET_ALL)
 
             # ========= 5) Aggressiveness: concave boost (optional, small) =========
-            theta = 0.10  # smaller; concave in 'a'
-            s += theta * (self.traits.aggressiveness / 100.0) * math.sqrt(a)
+            ww_theta = WW_VARS.get("ww_theta")  # smaller; concave in 'a'
+            s += ww_theta * (self.traits.aggressiveness / 100.0) * math.sqrt(a)
             if FOCUS_ON_BET_SIZING:
                 print(Back.MAGENTA + Fore.LIGHTGREEN_EX + f"{view.me} a={a}: final score={s:.2f}" + Style.RESET_ALL)
 
@@ -520,13 +522,13 @@ class PlayerBrain:
         norm = min(1.0, raw / 30.0)  # scale to [0,1] roughly
 
         # --- weights (ww_*) ---
-        ww_td_norm_now   = 2.0
-        ww_td_drive      = 0.8
-        ww_td_tempo      = 0.6
-        ww_td_norm_later = 1.2
-        ww_td_drive_lat  = 0.5
-        ww_td_tempo_lat  = 0.8
-        ww_td_none_k     = 0.6  # how much (1-norm) favors NONE
+        ww_td_norm_now   = WW_VARS.get("ww_td_norm_now") # 1.0
+        ww_td_drive      = WW_VARS.get("ww_td_drive") # 1.0
+        ww_td_tempo      = WW_VARS.get("ww_td_tempo") # 1.0
+        ww_td_norm_later = WW_VARS.get("ww_td_norm_later") # 0.5
+        ww_td_drive_lat  = WW_VARS.get("ww_td_drive_lat") # 0.8
+        ww_td_tempo_lat  = WW_VARS.get("ww_td_tempo_lat") # 0.5
+        ww_td_none_k     = WW_VARS.get("ww_td_none_k")  # how much (1-norm) favors NONE
 
         drive = self.traits.domination_drive / 100.0
         tempo = self.traits.tempo / 100.0
@@ -568,10 +570,10 @@ class PlayerBrain:
         if FOCUS_ON_CARD_PLAY:
             print(Back.WHITE + Fore.LIGHTBLACK_EX + f"for {my_card} base_ev={base_ev:.2f}" + Style.RESET_ALL)
         # --- TD shaping weights (ww_*) ---
-        ww_td_now_boost     = 0.02   # boost ~ v^2 when NOW
-        ww_td_later_penalty = 0.50   # penalty ~ v when LATER
-        ww_none_center_bias = 0.05   # light center-ish bias for NONE
-
+        ww_td_now_boost     = WW_VARS.get("ww_td_now_boost") # 0.10  # boost ~ v^2 when NOW
+        ww_td_later_penalty = WW_VARS.get("ww_td_later_penalty") # 0.50  # penalty ~ v when LATER
+        ww_none_center_bias = WW_VARS.get("ww_none_center_bias") # 0   
+        
         v = my_card.number
         if td_intent == TDIntent.NOW:
             base_ev += td_strength * ww_td_now_boost * (v * v)
@@ -586,7 +588,7 @@ class PlayerBrain:
         # --- stubbornness belief vector (only if opponent TYPE unknown) ---
         # If we don't know opp type (because they showed number or haven't played),
         # assume they play their represented type on the board; score how our card fares vs that.
-        ww_belief = 1.0  # weight for belief vector contribution
+        ww_belief = WW_VARS.get("ww_belief")  # weight for belief vector contribution
         stub = self.traits.stubbornness / 100.0
 
         # detect if TYPE is unknown: opp_cands contains multiple types; if all same type -> known type
@@ -800,17 +802,17 @@ class PlayerBrain:
 
         # ---------- Weights ----------
         # TD pressure (penalize a==0 if going for TD)
-        ww_td_zero_now    = 1.20
-        ww_td_zero_later  = 0.65
+        ww_td_zero_now    = WW_VARS.get("ww_td_zero_now")  # 1.0
+        ww_td_zero_later  = WW_VARS.get("ww_td_zero_later")  # 0.5
         # Liquidity / reserve
-        ww_liq_linear       = 0.85
-        ww_liq_later_mult   = 1.40    # stronger save-coin pressure if TD is LATER
-        ww_reserve_per_pre  = 0.30    # keep ~0.3 coin per future prelim (tune)
-        ww_short_mult_base  = 0.60    # base shortfall multiplier
+        ww_liq_linear       = WW_VARS.get("ww_liq_linear")  # 0.20
+        ww_liq_later_mult   = WW_VARS.get("ww_liq_later_mult")  # 1.40
+        ww_reserve_per_pre  = WW_VARS.get("ww_reserve_per_pre") 
+        ww_short_mult_base  = WW_VARS.get("ww_short_mult_base")  # 0.6..1.0   
         # EV
-        ww_ev               = 0.95
+        ww_ev_prelim               = WW_VARS.get("ww_ev_prelim")  # 0.8
         # Aggressiveness (concave)
-        ww_aggr             = 0.12
+        ww_aggr_prelim             = WW_VARS.get("ww_aggr_prelim")  # 0.5
 
         liq_mult = ww_liq_later_mult if td_intent == TDIntent.LATER else 1.0
         reserve_target = ww_reserve_per_pre * future_prelims
@@ -833,18 +835,18 @@ class PlayerBrain:
             liq_pen = ww_liq_linear * a * liq_mult
             remaining_after = max(0, behind - a)
             short = max(0.0, reserve_target - remaining_after)
-            ww_short_mult = ww_short_mult_base + 0.4 * (traits.ev_adherence / 100.0)  # 0.6..1.0
-            liq_pen += ww_short_mult * short
+            ww_short_mult = WW_VARS.get("ww_short_mult")  # 0.6..1.0   
+            liq_pen += (ww_short_mult_base + (ww_short_mult * (traits.ev_adherence / 100.0))) * short
             s -= liq_pen
             if FOCUS_ON_BATTLE_INITIAL_BET:
                     print(Back.CYAN + Fore.LIGHTYELLOW_EX + f"{view.me} a={a}: liquidity {liq_pen}" + Style.RESET_ALL)
             # --- 3) EV: (p_win - p_lose) * a ---
-            s += ww_ev * ((p_win - p_lose) * a)
+            s += ww_ev_prelim * ((p_win - p_lose) * a)
             if FOCUS_ON_BATTLE_INITIAL_BET:
                     print(Back.CYAN + Fore.LIGHTYELLOW_EX + f"{view.me} a={a}: EV {((p_win - p_lose) * a):.2f}" + Style.RESET_ALL)
 
             # --- 4) Aggressiveness (concave in a) ---
-            s += ww_aggr * (traits.aggressiveness / 100.0) * math.sqrt(a)
+            s += ww_aggr_prelim * (traits.aggressiveness / 100.0) * math.sqrt(a)
 
             scores[a] = s
             if FOCUS_ON_BATTLE_INITIAL_BET:
@@ -929,12 +931,12 @@ class PlayerBrain:
             return {getattr(b, "battle_id", i): 0 for i, b in enumerate(view.battles)}
 
         # Weights
-        ww_ev            = 1.0
-        ww_concede_mask  = 0.7   # how much we reduce EV if we expect opp to concede
-        ww_bluff_hint    = 0.25  # boost when our TYPE likely scares opp (bluffiness)
-        ww_aggr          = 0.08  # concave aggressiveness boost
-        ww_liq_linear    = 0.35  # mild liquidity cost per coin
-        ww_liq_short     = 0.40  # extra shortfall cost (scaled by ev_adherence)
+        ww_ev_card_bet            = WW_VARS.get("ww_ev_card_bet")  # 0.5   # EV per coin bet (p_win - p_lose)
+        ww_concede_mask  = WW_VARS.get("ww_concede_mask")   # how much we reduce EV if we expect opp to concede
+        ww_bluff_hint    = WW_VARS.get("ww_bluff_hint")  # boost when our TYPE likely scares opp (bluffiness)
+        ww_aggr          = WW_VARS.get("ww_aggr")  # concave aggressiveness boost
+        ww_liq_linear    = WW_VARS.get("ww_liq_linear")  # mild liquidity cost per coin
+        ww_liq_short     = WW_VARS.get("ww_liq_short")  # extra shortfall cost (scaled by ev_adherence)
 
         # Reserve logic: prefer keeping some coins for future prelims (same formula you set before)
         try:
@@ -1002,7 +1004,7 @@ class PlayerBrain:
             p_lose = (losses / total) if total > 0 else 0.5
 
             # EV parts that don't depend on 'a'
-            m_ev = ww_ev * (p_win - p_lose)                  # slope wrt 'a'
+            m_ev = ww_ev_card_bet * (p_win - p_lose)                  # slope wrt 'a'
             ev_const = m_ev * info["my_bet0"]                # constant part
             info["m_ev"] = m_ev
             info["ev_const"] = ev_const
@@ -1181,11 +1183,11 @@ class PlayerBrain:
         if opp_rep is not None:
             dom_gap = self._multiplier(my_card.type, opp_rep) - self._multiplier(opp_rep, my_card.type)
     
-        ww_ev              = 1.0
-        ww_deficit_pen     = 0.33   # linear pain from the deficit we must call
-        ww_stubborn_boost  = 0.60   # how strongly stubbornness offsets deficit/EV
-        ww_liq_call_cost   = 0.35   # liquidity pain of committing coins to match
-        ww_bank_bias       = 0.30   # small bias to fight if bank can stake 1 (when behind==0)
+        ww_ev              = WW_VARS.get("ww_ev")  # 0.8    # EV weight for call
+        ww_deficit_pen     = WW_VARS.get("ww_deficit_pen")   # linear pain from the deficit we must call
+        ww_stubborn_boost  = WW_VARS.get("ww_stubborn_boost")   # how strongly stubbornness offsets deficit/EV
+        ww_liq_call_cost   = WW_VARS.get("ww_liq_call_cost")   # liquidity pain of committing coins to match
+        ww_bank_bias       = WW_VARS.get("ww_bank_bias")   # small bias to fight if bank can stake 1 (when behind==0)
     
         # Base call EV approx: (p_win - p_lose) * (my_total_at_risk_after_call)
         my_bet  = getattr(battle_view, "my_bet", 0)
