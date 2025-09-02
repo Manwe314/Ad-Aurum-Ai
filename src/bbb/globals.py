@@ -9,7 +9,7 @@ FOCUS_ON_BATTLE_INITIAL_BET = False # set to True to enable debug prints
 FOCUS_ON_ADDITIONAL_BETS = False # set to True to enable debug prints
 FOCUS_ON_EQUALIZING_BETS = False # set to True to enable debug prints
 GAME_ENGINE_PIRINTS = False # set to True to enable debug prints
-LOGGING = True # set to False to disable logging
+LOGGING = False # set to False to disable logging
 LOGGER = HtmlLogger(path="./game_report.html", title="Game Report")
 
 WW_VARS = {

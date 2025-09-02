@@ -7,6 +7,10 @@ from dataclasses import dataclass, fields
 from typing import Dict, Iterable, List, Literal, Optional, Sequence, Tuple, Union
 import os
 import concurrent.futures
+try:
+    import psutil  # pip install psutil
+except Exception:
+    psutil = None
 
 # --- imports from your package (same package level as simulate_game) ---
 try:
@@ -49,15 +53,19 @@ except Exception:
 # ---------------------------------------------------------------------
 # Experiment configuration (tweak freely)
 # ---------------------------------------------------------------------
+# if True, use NORMAL_PRIORITY_CLASS; else ABOVE_NORMAL_PRIORITY_CLASS
+CPU_NORMAL = True  
 
+# amount of games = games per alpha * cycles per position * gamma randomizations * 24 default strategies * 4 per cycle
+# Example: 1 * 1 * 1 * 24 * 4 = 96 games total
 # X: games per alpha run
-GAMES_PER_ALPHA: int = 200
+GAMES_PER_ALPHA: int = 1
 
 # Y: how many full cycles of starting positions to run in beta
-CYCLES_PER_POSITION: int = 3
+CYCLES_PER_POSITION: int = 1
 
 # number of independent opponent randomizations per gamma
-GAMMA_RANDOMIZATIONS: int = 20
+GAMMA_RANDOMIZATIONS: int = 1
 
 # fixed game parameters (you can override per call)
 NUM_BATTLES: int = 3
@@ -522,7 +530,27 @@ def make_traits(**kwargs) -> Traits:
 
 
 
+
 def _gamma_worker(args) -> "GammaResult":
+    if psutil:
+        p = psutil.Process(os.getpid())
+        try:
+            # Let the worker use ALL logical CPUs
+            p.cpu_affinity(list(range(os.cpu_count() or 1)))
+        except Exception:
+            pass
+        try:
+            # Bump priority a notch (careful on shared machines)
+            if os.name == "nt":
+                if CPU_NORMAL:
+                    p.nice(psutil.NORMAL_PRIORITY_CLASS)
+                else:
+                    p.nice(psutil.ABOVE_NORMAL_PRIORITY_CLASS)
+            else:
+                p.nice(-5)
+        except Exception:
+            pass
+
     """
     Separate top-level function so it's picklable by multiprocessing.
     Runs a single Gamma with provided parameters.
