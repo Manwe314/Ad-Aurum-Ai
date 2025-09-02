@@ -24,7 +24,6 @@ def simulate_game(num_players=4, num_battles=3, starting_coins=10):
         print("=== Starting Simulation ===")
     players = [Player(f"P{i+1}", starting_coins) for i in range(num_players)]
     board = BettingBoard()
-    deck = Deck()
     names = []
 
     for i, p in enumerate(players):
