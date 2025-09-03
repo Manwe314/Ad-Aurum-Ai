@@ -68,7 +68,8 @@ class Player:
         self.favored_faction = None
         self.cards_won = []
         self.rounds_won = 0
-        self.brain = None  
+        self.brain = None
+        self.training_target = False
 
     def reset_round(self):
         self.cards = []

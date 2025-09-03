@@ -40,6 +40,7 @@ class RoundContext:
 class PlayerView:
     """What the player 'knows' at decision time (public info + their private hand)."""
     me: str
+    training_target: bool
     players: List[str]                       # seating in order
     board: BoardView
     my_hand: PlayerHandView
@@ -132,6 +133,7 @@ def build_player_view(
 
     return PlayerView(
         me=me.name,
+        training_target=me.training_target,
         players=[p.name for p in players],
         board=board_view,
         my_hand=my_hand,

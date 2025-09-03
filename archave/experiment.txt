@@ -1,0 +1,28 @@
+Delta experiment completed in 7370.9 seconds
+overall_win_rate=0.2550
+score=0.2378
+G1-low_G2-low_G3-mid    0.2900
+G1-low_G2-low_G3-high   0.2853
+G1-low_G2-mid_G3-low    0.2521
+G1-low_G2-mid_G3-mid    0.2487
+G1-low_G2-mid_G3-high   0.2373
+G1-low_G2-high_G3-low   0.2258
+G1-low_G2-high_G3-mid   0.2253
+G1-low_G2-high_G3-high  0.2043
+G1-mid_G2-low_G3-low    0.3068
+G1-mid_G2-low_G3-mid    0.3000
+G1-mid_G2-low_G3-high   0.2943
+G1-mid_G2-mid_G3-low    0.2647
+G1-mid_G2-mid_G3-high   0.2463
+G1-mid_G2-high_G3-low   0.2340
+G1-mid_G2-high_G3-mid   0.2163
+G1-mid_G2-high_G3-high  0.1996
+G1-high_G2-low_G3-low   0.3086
+G1-high_G2-low_G3-mid   0.2996
+G1-high_G2-low_G3-high  0.2910
+G1-high_G2-mid_G3-low   0.2682
+G1-high_G2-mid_G3-mid   0.2578
+G1-high_G2-mid_G3-high  0.2352
+G1-high_G2-high_G3-low  0.2142
+G1-high_G2-high_G3-mid  0.2142
+

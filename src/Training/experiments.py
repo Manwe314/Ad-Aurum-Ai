@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import random
+import time
 import statistics
 from dataclasses import dataclass, fields
 from typing import Dict, Iterable, List, Literal, Optional, Sequence, Tuple, Union
@@ -59,13 +60,13 @@ CPU_NORMAL = True
 # amount of games = games per alpha * cycles per position * gamma randomizations * 24 default strategies * 4 per cycle
 # Example: 1 * 1 * 1 * 24 * 4 = 96 games total
 # X: games per alpha run
-GAMES_PER_ALPHA: int = 1
+GAMES_PER_ALPHA: int = 50
 
 # Y: how many full cycles of starting positions to run in beta
 CYCLES_PER_POSITION: int = 1
 
 # number of independent opponent randomizations per gamma
-GAMMA_RANDOMIZATIONS: int = 1
+GAMMA_RANDOMIZATIONS: int = 20
 
 # fixed game parameters (you can override per call)
 NUM_BATTLES: int = 3
@@ -78,7 +79,7 @@ TIE_VALUE: float = 0.5
 EXPLORATION_CONST: int = 2
 
 # delta scoring: score = mean_win_rate - STD_PENALTY * std_across_strategies
-STD_PENALTY: float = 0.5
+STD_PENALTY: float = 0.33
 
 # RNG base seed (for reproducibility)
 BASE_SEED: int = 42
@@ -222,6 +223,7 @@ def _play_one_full_game(
 
     # Build players with requested seating order
     players: List[Player] = [Player(f"P{i+1}", starting_coins) for i in range(4)]
+    players[tracked_index].training_target = True  
     board = BettingBoard()
     rng = random.Random(base_seed)
 
@@ -650,7 +652,10 @@ def run_delta_parallel(
 # ---------------------------------------------------------------------
 
 if __name__ == "__main__":
+    t0 = time.time()
     res = run_delta()  # uses DEFAULT_DELTA_STRATEGIES and global defaults
+    elapsed = time.time() - t0
+    print(f"Delta experiment completed in {elapsed:.1f} seconds")
     print(f"overall_win_rate={res.overall_win_rate:.4f}")
     print(f"score={res.score:.4f}")
     for name, wr in res.per_strategy:
