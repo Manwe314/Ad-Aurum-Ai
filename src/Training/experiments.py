@@ -60,13 +60,13 @@ CPU_NORMAL = True
 # amount of games = games per alpha * cycles per position * gamma randomizations * 24 default strategies * 4 per cycle
 # Example: 1 * 1 * 1 * 24 * 4 = 96 games total
 # X: games per alpha run
-GAMES_PER_ALPHA: int = 50
+GAMES_PER_ALPHA: int = 2
 
 # Y: how many full cycles of starting positions to run in beta
 CYCLES_PER_POSITION: int = 1
 
 # number of independent opponent randomizations per gamma
-GAMMA_RANDOMIZATIONS: int = 20
+GAMMA_RANDOMIZATIONS: int = 2
 
 # fixed game parameters (you can override per call)
 NUM_BATTLES: int = 3

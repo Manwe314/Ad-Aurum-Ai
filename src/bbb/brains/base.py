@@ -6,8 +6,9 @@ from ..models import Card, GladiatorType, Battle
 from ..observations import PlayerView
 from colorama import Fore, Back, Style
 from .utils import estimate_future_representation_open_lane
-from ..globals import ADDITIONAL_INFO, TARGET_PLAYER, NUMBER_OF_BATTLES, NUM_PLAYERS, FOCUS_ON_BET_SIZING, FOCUS_ON_CARD_PLAY,FOCUS_ON_BATTLE_INITIAL_BET, FOCUS_ON_ADDITIONAL_BETS, GAME_ENGINE_PIRINTS, FOCUS_ON_EQUALIZING_BETS, WW_VARS, WW_VARS_TRAINING
+from ..globals import ADDITIONAL_INFO, TARGET_PLAYER, NUMBER_OF_BATTLES, NUM_PLAYERS, FOCUS_ON_BET_SIZING, FOCUS_ON_CARD_PLAY,FOCUS_ON_BATTLE_INITIAL_BET, FOCUS_ON_ADDITIONAL_BETS, GAME_ENGINE_PIRINTS, FOCUS_ON_EQUALIZING_BETS, WW_VARS, WW_VARS_TRAINING, PARALEL_LOGGING
 from collections import Counter
+from Analytics.analytics_logger import get_card_logger
 from typing import Iterable
 from enum import Enum as _Enum
 

@@ -1,0 +1,48 @@
+{
+  "players": [
+    { "traits": { 
+                "aggressiveness": 70, 
+                "tempo": 60, 
+                "stubbornness": 50, 
+                "bluffiness": 30, 
+                "herding": 55, 
+                "ev_adherence": 65, 
+                "risk_tolerance": 45, 
+                "domination_drive": 50, 
+                "exploration": 2 
+                }, "color": "#e41a1c" },
+    { "traits": { 
+                "aggressiveness": 20, 
+                "tempo": 40, 
+                "stubbornness": 55, 
+                "bluffiness": 70, 
+                "herding": 25, 
+                "ev_adherence": 45, 
+                "risk_tolerance": 60, 
+                "domination_drive": 35, 
+                "exploration": 2 
+                }, "color": "#377eb8" },
+    { "traits": { 
+                "aggressiveness": 50, 
+                "tempo": 50, 
+                "stubbornness": 50,
+                "bluffiness": 50,
+                "herding": 50, 
+                "ev_adherence": 50, 
+                "risk_tolerance": 50, 
+                "domination_drive": 50, 
+                "exploration": 2 
+                }, "color": "#4daf4a" },
+    { "traits": { 
+                "aggressiveness": 60, 
+                "tempo": 35, 
+                "stubbornness": 40, 
+                "bluffiness": 55, 
+                "herding": 40, 
+                "ev_adherence": 55, 
+                "risk_tolerance": 50, 
+                "domination_drive": 60, 
+                "exploration": 2 
+                }, "color": "#984ea3" }
+  ]
+}

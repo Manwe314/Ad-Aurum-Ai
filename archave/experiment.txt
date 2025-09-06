@@ -1,3 +1,4 @@
+base
 Delta experiment completed in 7370.9 seconds
 overall_win_rate=0.2550
 score=0.2378
@@ -26,3 +27,90 @@ G1-high_G2-mid_G3-high  0.2352
 G1-high_G2-high_G3-low  0.2142
 G1-high_G2-high_G3-mid  0.2142
 
+
+"score": 0.198916123155099,
+Delta experiment completed in 286.7 seconds
+overall_win_rate=0.3307
+score=0.3138
+G1-low_G2-low_G3-mid    0.3275
+G1-low_G2-low_G3-high   0.3425
+G1-low_G2-mid_G3-low    0.3475
+G1-low_G2-mid_G3-mid    0.2725
+G1-low_G2-mid_G3-high   0.3425
+G1-low_G2-high_G3-low   0.3200
+G1-low_G2-high_G3-mid   0.2825
+G1-low_G2-high_G3-high  0.2375
+G1-mid_G2-low_G3-low    0.4700
+G1-mid_G2-low_G3-mid    0.3950
+G1-mid_G2-low_G3-high   0.4100
+G1-mid_G2-mid_G3-low    0.3300
+G1-mid_G2-mid_G3-high   0.3275
+G1-mid_G2-high_G3-low   0.3450
+G1-mid_G2-high_G3-mid   0.2600
+G1-mid_G2-high_G3-high  0.2650
+G1-high_G2-low_G3-low   0.3825
+G1-high_G2-low_G3-mid   0.3600
+G1-high_G2-low_G3-high  0.3675
+G1-high_G2-mid_G3-low   0.3200
+G1-high_G2-mid_G3-mid   0.2850
+G1-high_G2-mid_G3-high  0.2950
+G1-high_G2-high_G3-low  0.3375
+G1-high_G2-high_G3-mid  0.3150
+
+"score": 0.24694503810209165,
+Delta experiment completed in 273.4 seconds
+overall_win_rate=0.1989
+score=0.1852
+G1-low_G2-low_G3-mid    0.2275
+G1-low_G2-low_G3-high   0.2275
+G1-low_G2-mid_G3-low    0.1900
+G1-low_G2-mid_G3-mid    0.2300
+G1-low_G2-mid_G3-high   0.2025
+G1-low_G2-high_G3-low   0.1650
+G1-low_G2-high_G3-mid   0.2200
+G1-low_G2-high_G3-high  0.1425
+G1-mid_G2-low_G3-low    0.2950
+G1-mid_G2-low_G3-mid    0.1925
+G1-mid_G2-low_G3-high   0.2450
+G1-mid_G2-mid_G3-low    0.1650
+G1-mid_G2-mid_G3-high   0.1500
+G1-mid_G2-high_G3-low   0.1550
+G1-mid_G2-high_G3-mid   0.1675
+G1-mid_G2-high_G3-high  0.1175
+G1-high_G2-low_G3-low   0.2650
+G1-high_G2-low_G3-mid   0.2450
+G1-high_G2-low_G3-high  0.2000
+G1-high_G2-mid_G3-low   0.1975
+G1-high_G2-mid_G3-mid   0.1925
+G1-high_G2-mid_G3-high  0.2325
+G1-high_G2-high_G3-low  0.1625
+G1-high_G2-high_G3-mid  0.1850
+
+"score": 0.198916123155099,
+Delta experiment completed in 5997.8 seconds
+overall_win_rate=0.3329
+score=0.3185
+G1-low_G2-low_G3-mid    0.3792
+G1-low_G2-low_G3-high   0.3609
+G1-low_G2-mid_G3-low    0.3738
+G1-low_G2-mid_G3-mid    0.3245
+G1-low_G2-mid_G3-high   0.3095
+G1-low_G2-high_G3-low   0.3269
+G1-low_G2-high_G3-mid   0.2995
+G1-low_G2-high_G3-high  0.2579
+G1-mid_G2-low_G3-low    0.4078
+G1-mid_G2-low_G3-mid    0.3856
+G1-mid_G2-low_G3-high   0.3476
+G1-mid_G2-mid_G3-low    0.3553
+G1-mid_G2-mid_G3-high   0.3113
+G1-mid_G2-high_G3-low   0.3028
+G1-mid_G2-high_G3-mid   0.2809
+G1-mid_G2-high_G3-high  0.2654
+G1-high_G2-low_G3-low   0.4039
+G1-high_G2-low_G3-mid   0.3871
+G1-high_G2-low_G3-high  0.3661
+G1-high_G2-mid_G3-low   0.3558
+G1-high_G2-mid_G3-mid   0.3247
+G1-high_G2-mid_G3-high  0.2841
+G1-high_G2-high_G3-low  0.2963
+G1-high_G2-high_G3-mid  0.2836

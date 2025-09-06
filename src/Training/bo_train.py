@@ -7,13 +7,13 @@ from skopt.utils import use_named_args
 from bbb.globals import WW_VARS_TRAINING
 from .experiments import run_delta_parallel
 from skopt.plots import plot_convergence
-from skopt.plots import plot_objective, plot_evaluations
+from .plotter import generate_gp_1d_frames, make_1d_gp_gif
 import matplotlib.pyplot as plt
 import json
 
 # === CONFIG ===
 N_INITIAL_POINTS = 20
-N_CALLS = 60
+N_CALLS = 80
 BOUNDS = {
     key: (0.0, 2.0) for key in WW_VARS_TRAINING.keys()
 }
@@ -56,7 +56,7 @@ def run_bo():
     )
 
     plot_convergence(result)
-    plt.savefig("Training/plots/convergence_curve.png")
+    plt.savefig("src/Training/plots/convergence_curve.png")
     plt.clf()
 
     # Display best result
@@ -70,7 +70,7 @@ def run_bo():
 
     return best_params, best_score
 
-def save_best_weights(best_params, score, path="Training/bo_results/best_weights.json"):
+def save_best_weights(best_params, score, path="src/Training/bo_results/best_weights.json"):
     os.makedirs(os.path.dirname(path), exist_ok=True)
 
     data = {
@@ -82,6 +82,12 @@ def save_best_weights(best_params, score, path="Training/bo_results/best_weights
         json.dump(data, f, indent=2)
 
     print(f"\n✅ Saved best weights to: {path}")
+
+
+
+
+
+
 
 if __name__ == "__main__":
     run_bo()
