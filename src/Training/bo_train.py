@@ -12,8 +12,8 @@ import matplotlib.pyplot as plt
 import json
 
 # === CONFIG ===
-N_INITIAL_POINTS = 20
-N_CALLS = 80
+N_INITIAL_POINTS = 45
+N_CALLS = 100
 BOUNDS = {
     key: (0.0, 2.0) for key in WW_VARS_TRAINING.keys()
 }

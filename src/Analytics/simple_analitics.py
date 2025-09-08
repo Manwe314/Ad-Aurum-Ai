@@ -6,6 +6,12 @@ import json
 import os, uuid
 from dataclasses import fields, asdict
 from typing import Dict, List, Optional, Sequence, Tuple
+from .analytics_logger import (
+    aggregate_both,
+    plot_play_per_play_beats_losses, plot_play_per_play_certainty, plot_play_per_play_winrate,
+    plot_play_eval_avg_wins, plot_play_eval_certainty, plot_play_eval_winrate,
+    plot_bet_eval_avg_wins, plot_bet_eval_certainty, plot_bet_eval_winrate, plot_play_eval_avg_losses
+)
 
 # --- Engine imports (robust to minor layout differences) ---
 try:
@@ -380,8 +386,26 @@ def run_many_games_avg_round_coins_parallel(
                 wins_total[name] += wins_part[name]
             ties_total += ties_part
 
-    # Compute averages
+    # Compute averages and logging output
     avgs: Dict[str, List[float]] = {name: [t / games for t in totals] for name, totals in sums_total.items()}
+    if PARALEL_LOGGING:
+        play_agg, bet_agg = aggregate_both(run_dir)
+        # write_card_outcomes_csv(os.path.join(run_dir, "play_card_outcomes.csv"), play_agg)
+        # write_card_outcomes_csv(os.path.join(run_dir, "bet_card_outcomes.csv"),  bet_agg)
+
+        # Charts (top_k optional if you have many cards)
+        plot_play_per_play_beats_losses(os.path.join(run_dir, "play_per_play_beats_losses.png"), play_agg)
+        plot_play_per_play_certainty(   os.path.join(run_dir, "play_per_play_certainty.png"),    play_agg)
+        plot_play_per_play_winrate(     os.path.join(run_dir, "play_per_play_winrate.png"),      play_agg)
+
+        plot_play_eval_avg_wins(        os.path.join(run_dir, "play_eval_avg_wins.png"),         play_agg)
+        plot_play_eval_avg_losses(os.path.join(run_dir, "play_eval_avg_losses.png"), play_agg)
+        plot_play_eval_certainty(       os.path.join(run_dir, "play_eval_certainty.png"),        play_agg)
+        plot_play_eval_winrate(         os.path.join(run_dir, "play_eval_winrate.png"),          play_agg)
+
+        plot_bet_eval_avg_wins(         os.path.join(run_dir, "bet_eval_avg_wins.png"),          bet_agg)
+        plot_bet_eval_certainty(        os.path.join(run_dir, "bet_eval_certainty.png"),         bet_agg)
+        plot_bet_eval_winrate(          os.path.join(run_dir, "bet_eval_winrate.png"),           bet_agg)
     return avgs, wins_total, ties_total
 
 # --------------------------

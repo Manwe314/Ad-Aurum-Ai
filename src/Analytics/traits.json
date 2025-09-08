@@ -1,7 +1,7 @@
 {
   "players": [
     { "traits": { 
-                "aggressiveness": 70, 
+                "aggressiveness": 100, 
                 "tempo": 60, 
                 "stubbornness": 50, 
                 "bluffiness": 30, 
@@ -23,7 +23,7 @@
                 "exploration": 2 
                 }, "color": "#377eb8" },
     { "traits": { 
-                "aggressiveness": 50, 
+                "aggressiveness": 100, 
                 "tempo": 50, 
                 "stubbornness": 50,
                 "bluffiness": 50,
@@ -34,7 +34,7 @@
                 "exploration": 2 
                 }, "color": "#4daf4a" },
     { "traits": { 
-                "aggressiveness": 60, 
+                "aggressiveness": 100, 
                 "tempo": 35, 
                 "stubbornness": 40, 
                 "bluffiness": 55, 

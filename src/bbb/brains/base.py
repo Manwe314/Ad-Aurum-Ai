@@ -568,6 +568,7 @@ class PlayerBrain:
         # --- base EV (value-aware) ---
         base_ev = self._ev_card_value(my_card, opp_cands, board_totals)
 
+
         if FOCUS_ON_CARD_PLAY:
             print(Back.WHITE + Fore.LIGHTBLACK_EX + f"for {my_card} base_ev={base_ev:.2f}" + Style.RESET_ALL)
         # --- TD shaping weights (ww_*) ---
@@ -732,6 +733,12 @@ class PlayerBrain:
 
             # record and consume from temporary hand
             picks.append((b, chosen, show_type))
+            if PARALEL_LOGGING:
+                for c in hand:
+                    win, lose, total, _ = self._win_lose_stats(c, opp_cands, board_totals)
+                    certain = True if (win == 0 or lose == 0) else False
+                    played = True if c == chosen else False
+                    get_card_logger().log_eval_play(card_key=repr(c), wins_against=win, losses_against=lose, total_candidates=total, certain=certain, played=played)
             hand.remove(chosen)
 
         return picks
@@ -1003,6 +1010,9 @@ class PlayerBrain:
             wins, losses, total, _ = self._win_lose_stats(my_card, opp_cands, board_totals)
             p_win  = (wins   / total) if total > 0 else 0.5
             p_lose = (losses / total) if total > 0 else 0.5
+            if PARALEL_LOGGING:
+                certain = True if (wins == 0 or losses == 0) else False
+                get_card_logger().log_eval_bet(card_key=repr(my_card), wins_against=wins, losses_against=losses, total_candidates=total, certain=certain, bet_placed=True)
 
             # EV parts that don't depend on 'a'
             m_ev = ww_ev_card_bet * (p_win - p_lose)                  # slope wrt 'a'
