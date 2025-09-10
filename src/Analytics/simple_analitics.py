@@ -12,6 +12,13 @@ from .analytics_logger import (
     plot_play_eval_avg_wins, plot_play_eval_certainty, plot_play_eval_winrate,
     plot_bet_eval_avg_wins, plot_bet_eval_certainty, plot_bet_eval_winrate, plot_play_eval_avg_losses
 )
+from .analytics_logger import (
+    aggregate_outcomes,
+    write_card_outcome_winrates_csv,
+    plot_outcome_winrates_with_concede,
+    aggregate_new_coins, plot_new_coins_per_round_stacked,
+    average_new_coins_by_round
+)
 
 # --- Engine imports (robust to minor layout differences) ---
 try:
@@ -73,7 +80,7 @@ def make_traits_safe(d: Dict) -> Traits:
     defaults = dict(
         aggressiveness=50, risk_tolerance=50, tempo=50, bluffiness=50,
         stubbornness=50, domination_drive=50, herding=50, ev_adherence=50,
-        exploration=d.get("exploration", 2),
+        exploration=d.get("exploration", 0.5),
     )
     payload = {k: d.get(k, defaults.get(k, 50)) for k in allowed}
     return Traits(**payload)  # type: ignore
@@ -88,6 +95,23 @@ def _validate_color(c: str) -> str:
             f"Invalid color '{c}'. Use a Matplotlib color name (e.g. 'red') "
             f"or hex (e.g. '#ff0000'). See https://matplotlib.org/stable/gallery/color/named_colors.html"
         )
+    
+# put this helper near your other small utils
+def _wrap_legend_text(s: str, max_chars: int = 80) -> str:
+    """Wrap 'Fixed: a=50, b=50, ...' into lines no longer than ~max_chars."""
+    parts = s.split(", ")
+    lines, cur = [], ""
+    for p in parts:
+        nxt = (cur + ", " if cur else "") + p
+        if len(nxt) > max_chars and cur:
+            lines.append(cur)
+            cur = p
+        else:
+            cur = nxt
+    if cur:
+        lines.append(cur)
+    return "\n".join(lines)
+
 
 def load_traits_json(path: str) -> tuple[List[Traits], List[str]]:
     """
@@ -118,6 +142,31 @@ def load_traits_json(path: str) -> tuple[List[Traits], List[str]]:
         traits_list.append(make_traits_safe(tdict))
         colors.append(_validate_color(color))
     return traits_list, colors
+
+# --- add near your other imports/helpers in analytics.py ---
+def load_single_player_traits(path: str) -> Traits:
+    """
+    Expected JSON:
+    { "traits": { ... } }
+    """
+    with open(path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    tdict = data.get("traits", {})
+    return make_traits_safe(tdict)
+
+def assert_valid_trait_name(name: str) -> str:
+    fields_set = _traits_field_names()
+    if name not in fields_set:
+        raise ValueError(f"--target-trait '{name}' is not a valid Traits field. Valid: {sorted(fields_set)}")
+    return name
+
+def random_opponent_traits(seed: int) -> Traits:
+    rng = random.Random(seed)
+    names = _traits_field_names()
+    # exploration stays modest (2) unless the dataclass default is different
+    payload = {n: (0.5 if n == "exploration" else rng.randint(0, 100)) for n in names}
+    return make_traits_safe(payload)
+
 
 # -----------------------------------------
 # Core: run one game and collect per-round
@@ -194,7 +243,7 @@ def run_one_game_collect_round_end_coins(
         determine_round_winner(players, board)
 
         # Phase 6: evaluate favored factions; record coins; rotate seats
-        evaluate_favored_factions(players)
+        evaluate_favored_factions(players, round_num)
 
         for p in players:
             round_end_coins[p.name].append(p.coins + p.front_coins)
@@ -390,23 +439,81 @@ def run_many_games_avg_round_coins_parallel(
     avgs: Dict[str, List[float]] = {name: [t / games for t in totals] for name, totals in sums_total.items()}
     if PARALEL_LOGGING:
         play_agg, bet_agg = aggregate_both(run_dir)
+        outcome_agg = aggregate_outcomes(run_dir)
+        coin_outcome_agg = aggregate_new_coins(run_dir)
+        coins_outcome = average_new_coins_by_round(coin_outcome_agg, games=games)
+
         # write_card_outcomes_csv(os.path.join(run_dir, "play_card_outcomes.csv"), play_agg)
         # write_card_outcomes_csv(os.path.join(run_dir, "bet_card_outcomes.csv"),  bet_agg)
 
         # Charts (top_k optional if you have many cards)
-        plot_play_per_play_beats_losses(os.path.join(run_dir, "play_per_play_beats_losses.png"), play_agg)
-        plot_play_per_play_certainty(   os.path.join(run_dir, "play_per_play_certainty.png"),    play_agg)
-        plot_play_per_play_winrate(     os.path.join(run_dir, "play_per_play_winrate.png"),      play_agg)
+        plot_new_coins_per_round_stacked(os.path.join(run_dir, "coins/new_coins_per_round_stacked.png"), coins_outcome, title_prefix="new coins avarage")
 
-        plot_play_eval_avg_wins(        os.path.join(run_dir, "play_eval_avg_wins.png"),         play_agg)
-        plot_play_eval_avg_losses(os.path.join(run_dir, "play_eval_avg_losses.png"), play_agg)
-        plot_play_eval_certainty(       os.path.join(run_dir, "play_eval_certainty.png"),        play_agg)
-        plot_play_eval_winrate(         os.path.join(run_dir, "play_eval_winrate.png"),          play_agg)
+        plot_outcome_winrates_with_concede(os.path.join(run_dir, "actual_winrate/card_outcome_winrates.png"), outcome_agg)
 
-        plot_bet_eval_avg_wins(         os.path.join(run_dir, "bet_eval_avg_wins.png"),          bet_agg)
-        plot_bet_eval_certainty(        os.path.join(run_dir, "bet_eval_certainty.png"),         bet_agg)
-        plot_bet_eval_winrate(          os.path.join(run_dir, "bet_eval_winrate.png"),           bet_agg)
+        plot_play_per_play_beats_losses(os.path.join(run_dir, "per_plays/play_per_play_beats_losses.png"), play_agg)
+        plot_play_per_play_certainty(   os.path.join(run_dir, "per_plays/play_per_play_certainty.png"),    play_agg)
+        plot_play_per_play_winrate(     os.path.join(run_dir, "per_plays/play_per_play_winrate.png"),      play_agg)
+
+        plot_play_eval_avg_wins(        os.path.join(run_dir, "per_evaluation/card_picking/play_eval_avg_wins.png"),         play_agg)
+        plot_play_eval_avg_losses(os.path.join(run_dir, "per_evaluation/card_picking/play_eval_avg_losses.png"), play_agg)
+        plot_play_eval_certainty(       os.path.join(run_dir, "per_evaluation/card_picking/play_eval_certainty.png"),        play_agg)
+        plot_play_eval_winrate(         os.path.join(run_dir, "per_evaluation/card_picking/play_eval_winrate.png"),          play_agg)
+
+        plot_bet_eval_avg_wins(         os.path.join(run_dir, "per_evaluation/card_betting/bet_eval_avg_wins.png"),          bet_agg)
+        plot_bet_eval_certainty(        os.path.join(run_dir, "per_evaluation/card_betting/bet_eval_certainty.png"),         bet_agg)
+        plot_bet_eval_winrate(          os.path.join(run_dir, "per_evaluation/card_betting/bet_eval_winrate.png"),           bet_agg)
     return avgs, wins_total, ties_total
+
+def winrate_for_trait_value(
+    *,
+    base_traits: Traits,
+    target_trait: str,
+    trait_value: int,
+    runs: int,
+    games_per_run: int,
+    starting_coins: int,
+    num_battles: int,
+    seed: Optional[int],
+    workers: int,
+    chunk_size: int,
+) -> float:
+    """
+    Returns overall winrate (%) for tracked player (seat P1) when its `target_trait`
+    is set to `trait_value`, averaging across `runs`. Each run randomizes opponents.
+    """
+    # build tracked player's traits for this point
+    bt = base_traits
+    # create a copy with the override
+    t_kwargs = {k: getattr(bt, k) for k in _traits_field_names()}
+    t_kwargs[target_trait] = max(0, min(100, int(trait_value)))
+    tracked = Traits(**t_kwargs)  # type: ignore
+
+    parent_rng = random.Random(seed)
+    total_wins = 0
+    total_games = 0
+
+    for r in range(runs):
+        # randomize opponents for this run
+        seed_run = parent_rng.randint(0, 2**31 - 1)
+        opp1 = random_opponent_traits(seed_run + 1)
+        opp2 = random_opponent_traits(seed_run + 2)
+        opp3 = random_opponent_traits(seed_run + 3)
+
+        avgs, wins, ties = run_many_games_avg_round_coins_parallel(
+            traits_by_seat=[tracked, opp1, opp2, opp3],
+            games=games_per_run,
+            starting_coins=starting_coins,
+            num_battles=num_battles,
+            seed=seed_run,
+            workers=workers,
+            chunk_size=chunk_size if chunk_size and chunk_size > 0 else None,
+        )
+        total_wins += int(wins.get("P1", 0))
+        total_games += games_per_run
+
+    return (100.0 * total_wins / total_games) if total_games else 0.0
+
 
 # --------------------------
 # Minimal CSV + plotting
@@ -436,6 +543,53 @@ def _format_traits_legend(tr: Traits) -> str:
         if hasattr(tr, k):
             parts.append(f"{short.get(k,k)}={getattr(tr, k)}")
     return ", ".join(parts)
+
+def save_iterate_trait_csv(out_csv: str, xs: List[int], ys: List[float], meta: Dict[str, str]) -> None:
+    os.makedirs(os.path.dirname(out_csv) or ".", exist_ok=True)
+    with open(out_csv, "w", newline="", encoding="utf-8") as f:
+        w = csv.writer(f)
+        w.writerow(["target_trait", meta.get("target_trait", "")])
+        w.writerow(["step", meta.get("step", "")])
+        w.writerow(["runs", meta.get("runs", "")])
+        w.writerow(["games_per_run", meta.get("games_per_run", "")])
+        w.writerow([])
+        w.writerow(["trait_value", "winrate_percent"])
+        for x, y in zip(xs, ys):
+            w.writerow([x, f"{y:.3f}"])
+
+def plot_iterate_trait(out_png: str, xs: List[int], ys: List[float], legend_text: str, title: str) -> None:
+    fig, ax = plt.subplots(figsize=(10, 4))
+
+    # line + markers
+    ax.plot(xs, ys, marker="o")
+    ax.set_xlabel("Trait value")
+    ax.set_ylabel("Win rate (%)")
+    ax.set_ylim(0, 100)
+    ax.set_xticks(xs)
+    ax.grid(True, linestyle="--", linewidth=0.5)
+
+    # value labels on each point
+    for x, y in zip(xs, ys):
+        dy = -10 if y >= 95 else 5
+        ax.annotate(f"{y:.1f}%", (x, y), textcoords="offset points",
+                    xytext=(0, dy), ha="center", fontsize=8)
+
+    # title as a figure-level suptitle
+    fig.suptitle(title, y=0.98)
+
+    # put fixed traits as a wrapped subtitle (figure text) above the axes
+    wrapped = _wrap_legend_text(legend_text, max_chars=80)
+    fig.text(0.5, 0.92, wrapped, ha="center", va="top", fontsize=8)
+
+    # leave room at the top for the subtitle
+    fig.tight_layout(rect=[0, 0, 1, 0.88])
+
+    os.makedirs(os.path.dirname(out_png) or ".", exist_ok=True)
+    fig.savefig(out_png, dpi=160, bbox_inches="tight")
+    plt.close(fig)
+
+
+
 
 def save_csv_summary(out_csv: str, avgs: Dict[str, List[float]]) -> None:
     names = [f"P{i+1}" for i in range(4)]
@@ -513,6 +667,71 @@ def plot_win_rates_bar(
 # CLI (subcommands)
 # --------------------------
 
+def cmd_iterate_trait(args: argparse.Namespace) -> int:
+    global PARALEL_LOGGING
+    PARALEL_LOGGING = False  # silence detailed logging for this mode
+    base_traits = load_single_player_traits(args.traits)
+    target_trait = assert_valid_trait_name(args.target_trait)
+
+    # fixed traits (legend): everything except the target
+    fixed_pairs = []
+    for name in sorted(_traits_field_names()):
+        if name == target_trait:
+            continue
+        fixed_pairs.append(f"{name}={getattr(base_traits, name)}")
+    legend_text = "Fixed: " + ", ".join(fixed_pairs)
+
+    # build X values: 0 .. 100 (ensure 100 included)
+    step = max(1, int(args.step))
+    xs: List[int] = list(range(0, 101, step))
+    if xs[-1] != 100:
+        xs.append(100)
+
+    ys: List[float] = []
+    parent_rng = random.Random(args.seed)
+    # we’ll vary the *outer* seed per point for reproducibility
+    for x in xs:
+        seed_point = parent_rng.randint(0, 2**31 - 1)
+        wr = winrate_for_trait_value(
+            base_traits=base_traits,
+            target_trait=target_trait,
+            trait_value=x,
+            runs=args.runs,
+            games_per_run=args.games,
+            starting_coins=args.starting_coins,
+            num_battles=args.num_battles,
+            seed=seed_point,
+            workers=args.workers if args.workers and args.workers > 1 else 1,
+            chunk_size=args.chunk_size if args.chunk_size and args.chunk_size > 0 else 0,
+        )
+        ys.append(wr)
+
+    os.makedirs(args.outdir, exist_ok=True)
+
+    # save CSV
+    save_iterate_trait_csv(
+        os.path.join(args.outdir, "iterate_trait_curve.csv"),
+        xs, ys,
+        meta=dict(
+            target_trait=target_trait,
+            step=str(step),
+            runs=str(args.runs),
+            games_per_run=str(args.games),
+        ),
+    )
+
+    # plot
+    model_note = f" • {args.model_name}" if args.model_name else ""
+    title = f"Winrate vs {target_trait}{model_note} (runs={args.runs}, games/run={args.games})"
+    plot_iterate_trait(
+        os.path.join(args.outdir, "iterate_trait_curve.png"),
+        xs, ys, legend_text, title
+    )
+
+    print(f"Saved iterate-trait CSV/PNG to: {os.path.abspath(args.outdir)}")
+    return 0
+
+
 def cmd_coins_per_round(args: argparse.Namespace) -> int:
     traits, colors = load_traits_json(args.traits)
 
@@ -571,12 +790,35 @@ def build_parser() -> argparse.ArgumentParser:
     q.add_argument("--chunk-size", type=int, default=0, help="Games per task (0 = auto ~8 chunks/worker).")
     q.add_argument("--model-name", default="AAA", help="Model name of used weights to name by")
 
+    it = sub.add_parser(
+        "iterate-trait",
+        help="Sweep a single trait (0..100) for the tracked player and plot winrate vs trait value."
+    )
+    it.add_argument("--traits", required=True, help="Path to JSON with ONE player's baseline traits: {\"traits\": {...}}")
+    it.add_argument("--target-trait", required=True, help="Trait field to sweep, e.g. aggressiveness")
+    it.add_argument("--step", type=int, default=10, help="Step size between 0 and 100 (default: 10)")
+    it.add_argument("--runs", type=int, required=True, help="Independent runs per trait value (opponents randomized each run)")
+    it.add_argument("--games", type=int, required=True, help="Games per run (run in parallel if --workers>1)")
+    it.add_argument("--starting-coins", type=int, required=True)
+    it.add_argument("--num-battles", type=int, default=3)
+    it.add_argument("--seed", type=int, default=None)
+    it.add_argument("--workers", type=int, default=0, help="Processes for inner game sims (per run)")
+    it.add_argument("--chunk-size", type=int, default=0)
+    it.add_argument("--model-name", default="", help="Optional label to show on the plot title")
+    it.add_argument("--outdir", default="iterate_out")
+
     return p
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-    return cmd_coins_per_round(args)
+    if args.cmd == "coins-per-round":
+        return cmd_coins_per_round(args)
+    elif args.cmd == "iterate-trait":
+        return cmd_iterate_trait(args)
+    else:
+        parser.error(f"Unknown cmd {args.cmd}")
+        return 2
 
 if __name__ == "__main__":
     raise SystemExit(main())

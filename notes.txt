@@ -1,15 +1,8 @@
-Logger for P win and P loose compounding
 
-make a Experiment function to simulate games and return winrate
-
-use a library for bayesian optimization
-
-make optimization loop
+make optimization loop - endless
 
 anti overfitting measures
 
 best model evolution steps
 
-
-
-
+--group {traits} 

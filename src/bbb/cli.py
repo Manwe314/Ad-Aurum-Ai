@@ -7,7 +7,7 @@ from .brains.base import PlayerBrain, Traits
 import random
 from typing import List, Dict, Optional
 from colorama import Fore, Back, Style
-from .globals import ADDITIONAL_INFO, TARGET_PLAYER, GAME_ENGINE_PIRINTS, LOGGER, LOGGING
+from .globals import ADDITIONAL_INFO, TARGET_PLAYER, GAME_ENGINE_PIRINTS, LOGGER, LOGGING, PARALEL_LOGGING
 from .brains.base import DeckMemory
 from .utils.logger_html import HtmlLogger
 
@@ -20,6 +20,9 @@ def rotate_players(players: list) -> list:
 
 
 def simulate_game(num_players=4, num_battles=3, starting_coins=10):
+
+    global PARALEL_LOGGING
+    PARALEL_LOGGING = False  # disable parallel logging in main sim
     if GAME_ENGINE_PIRINTS:
         print("=== Starting Simulation ===")
     players = [Player(f"P{i+1}", starting_coins) for i in range(num_players)]
@@ -33,7 +36,7 @@ def simulate_game(num_players=4, num_battles=3, starting_coins=10):
             bluffiness = 50,
             herding = 50,
             ev_adherence = 50,
-            exploration = 5,
+            exploration = 0.5,
         ))
         names.append(p.name)
     
@@ -147,7 +150,7 @@ def simulate_game(num_players=4, num_battles=3, starting_coins=10):
                 total_front += p.front_coins
             LOGGER.log_cat("debug", f"Total coins in game: {total_back} back + {total_front} front = {total_back + total_front}")
             LOGGER.section("Phase 6: End of Round Cleanup")
-        evaluate_favored_factions(players)
+        evaluate_favored_factions(players, round_num)
         players = rotate_players(players)
     
     for player in players:

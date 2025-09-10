@@ -28,7 +28,7 @@ class Traits:
     domination_drive: int = 50     # weight of 3/3 dominance goal
     herding: int = 50              # tendency to follow board multipliers
     ev_adherence: int = 50         # 0: vibes, 100: strict EV
-    exploration: int = 3          # random exploration
+    exploration: int = 0.5          # random exploration
 
 THREE_X_CHAIN = [GladiatorType.A, GladiatorType.B, GladiatorType.C, GladiatorType.D, GladiatorType.E]
 TWO_X_CHAIN   = [GladiatorType.A, GladiatorType.C, GladiatorType.E, GladiatorType.B, GladiatorType.D]

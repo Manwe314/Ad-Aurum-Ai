@@ -1,8 +1,9 @@
 from .models import GladiatorType
 from colorama import Fore, Back, Style
-from .globals import ADDITIONAL_INFO, TARGET_PLAYER, GAME_ENGINE_PIRINTS, LOGGER, LOGGING
+from .globals import ADDITIONAL_INFO, TARGET_PLAYER, GAME_ENGINE_PIRINTS, LOGGER, LOGGING, PARALEL_LOGGING
+from Analytics.analytics_logger import get_card_logger, COIN_SOURCES
 
-def evaluate_favored_factions(players):
+def evaluate_favored_factions(players, round_num):
     for player in players:
         for p in players:
             if p.name == player.favored_faction:
@@ -14,6 +15,11 @@ def evaluate_favored_factions(players):
                     print(f"{player.name} gains {gained} coins for favoring {player.favored_faction}" + Style.RESET_ALL)
                 if LOGGING:
                     LOGGER.log_cat("success", f"Gains {gained} coins for favoring {player.favored_faction}", player=player.name)
+                if PARALEL_LOGGING:
+                    if p == players[-1]:
+                        get_card_logger().log_new_coins(round_index=round_num, source=COIN_SOURCES['favor_payout_last'], amount=gained)
+                    else:
+                        get_card_logger().log_new_coins(round_index=round_num, source=COIN_SOURCES['favor_payout_richest'], amount=gained)
                 break
 
 def determine_round_winner(players, board):

@@ -38,6 +38,25 @@ def _atomic_write_json(path: str, payload: dict) -> None:
     os.replace(tmp, path)  # atomic on POSIX & Windows
 
 
+def average_new_coins_by_round(
+    coins_summed: Dict[str, Dict[str, int]],
+    *,
+    games: int,
+) -> Dict[str, Dict[str, float]]:
+    """
+    Divide summed coins by total games to get 'average coins minted per round per source'.
+    Assumes every game reaches all rounds. If not, pass per-round counts instead.
+    """
+    if games <= 0:
+        raise ValueError("games must be > 0")
+
+    averaged: Dict[str, Dict[str, float]] = {}
+    for rkey, srcmap in coins_summed.items():
+        averaged[rkey] = {src: (val / games) for src, val in srcmap.items()}
+    return averaged
+
+
+
 # ---------- logger ----------
 
 # Internal stat template per card
@@ -58,6 +77,30 @@ def _empty_card_stats() -> Dict[str, int]:
         "certain_plays": 0,
     }
 
+def _empty_outcome_stats() -> Dict[str, int]:
+    return {
+        "wins": 0,
+        "losses": 0,
+        "wins_by_concede": 0,   # opponent conceded & we won
+        "losses_by_concede": 0  # we conceded & lost
+    }
+
+# ---- New coins (minting) sources ----
+COIN_SOURCES = {
+    "total_domination": "total_domination",               # win by total domination
+    "favor_payout_last": "favor_payout_last",             # favoring payout when target is LAST player
+    "favor_payout_richest": "favor_payout_richest",     # favoring payout when target is NOT last
+    "uneven_bet_add1": "uneven_bet_add1",           # bank injects +1 coin due to lopsided bet
+    "uneven_bet_bankCover": "uneven_bet_bankCover",  # bank confiscates & mints
+}
+_ALLOWED_COIN_SOURCES = set(COIN_SOURCES.values())
+
+def _empty_coins_round_stats() -> Dict[str, int]:
+    # one dict per round: {source_name -> amount_minted}
+    return {src: 0 for src in _ALLOWED_COIN_SOURCES}
+
+
+
 class CardOutcomeLogger:
     """
     Per-process analytics logger with two separate channels:
@@ -69,14 +112,16 @@ class CardOutcomeLogger:
     We keep *counters* in memory and write a small shard file at process exit (atexit)
     so multiprocessing has zero contention.
 
-    Shard schema (v2):
+    Shard schema (v4):
     {
       "schema": 2,
       "pid": <int>,
       "written_at": "<iso>",
       "stats": {
         "play": { "<card_key>": {...}, ... },
-        "bet":  { "<card_key>": {...}, ... }
+        "bet":  { "<card_key>": {...}, ... },
+        "outcome": {"<card_key>": {...}, ...},
+        "coins": {}, 
       }
     }
     """
@@ -87,10 +132,86 @@ class CardOutcomeLogger:
         self.shard_path = os.path.join(self.run_dir, f"card_outcomes_shard_{self.pid}.json")
         self._lock = threading.Lock()
         # two namespaces: play & bet
-        self._stats: Dict[str, Dict[str, Dict[str, int]]] = {"play": {}, "bet": {}}
+        self._stats: Dict[str, Dict[str, Dict[str, int]]] = {
+            "play": {},
+            "bet": {},
+            "outcome": {},
+            "coins": {},     # NEW: per-round minted amounts by source
+        }
+
         atexit.register(self.dump)
 
     # -------- public API (two channels) --------
+
+    def log_new_coins(
+        self,
+        *,
+        round_index: int,      # 1..N (typically 1..4)
+        source: str,           # one of COIN_SOURCES values
+        amount: int,           # minted amount (>0)
+    ) -> None:
+        """
+        Record 'new coins minted into circulation' for a given round & source.
+        Example sources: see COIN_SOURCES (total_domination, favor_payout_last, ...).
+
+        Notes:
+        - 'round_index' is 1-based in your engine; we store as string key.
+        - 'amount' should be non-negative; pass only coins that appear from the bank/system.
+        """
+        if source not in _ALLOWED_COIN_SOURCES:
+            raise ValueError(f"Unknown coin source '{source}'. Allowed: {sorted(_ALLOWED_COIN_SOURCES)}")
+        if amount < 0:
+            # If you ever need to subtract, store zero and track debits separately; this channel is minting only.
+            amount = 0
+
+        rkey = str(int(round_index))  # JSON-safe key
+        with self._lock:
+            ns = self._stats["coins"]
+            round_map = ns.get(rkey)
+            if round_map is None:
+                round_map = _empty_coins_round_stats()
+                ns[rkey] = round_map
+            round_map[source] = int(round_map.get(source, 0)) + int(amount)
+
+
+    def log_card_outcome(
+        self,
+        *,
+        card_key: str,
+        won: bool,
+        opponent_conceded: Optional[bool] = None,
+        lost_by_concede: Optional[bool] = None,
+    ) -> None:
+        """
+        Record the *actual* outcome for a played card.
+
+        Args:
+          card_key: identifier (e.g., repr(card))
+          won: True if our card ultimately won the battle
+          opponent_conceded: True if our win was due to *opponent* concession
+          lost_by_concede:   True if our loss was due to *our* concession
+
+        Only one of (opponent_conceded, lost_by_concede) should be True for a single outcome.
+        """
+        oc = bool(opponent_conceded) if opponent_conceded is not None else False
+        lc = bool(lost_by_concede) if lost_by_concede is not None else False
+
+        with self._lock:
+            ns = self._stats["outcome"]
+            s = ns.get(card_key)
+            if s is None:
+                s = _empty_outcome_stats()
+                ns[card_key] = s
+
+            if won:
+                s["wins"] += 1
+                if oc:
+                    s["wins_by_concede"] += 1
+            else:
+                s["losses"] += 1
+                if lc:
+                    s["losses_by_concede"] += 1
+
 
     def log_eval_play(
         self,
@@ -177,7 +298,7 @@ class CardOutcomeLogger:
         """Write this process's shard as JSON (atomic replace)."""
         with self._lock:
             payload = {
-                "schema": 2,  # bumped from v1
+                "schema": 4,  # bumped from v1
                 "pid": self.pid,
                 "written_at": _now_iso(),
                 "stats": self._stats,
@@ -205,20 +326,32 @@ def _merge_card_maps(dst: Dict[str, Dict[str, int]], src: Dict[str, Dict[str, in
 
 def _read_shard(path: str) -> Dict[str, Dict[str, Dict[str, int]]]:
     """
-    Returns a dict with keys 'play' and 'bet' mapping to their card maps.
-    Supports schema v2 (preferred) and v1 (legacy: only a flat map -> treated as 'play').
+    Returns dict with keys 'play','bet','outcome','coins'.
+    Supports:
+      - schema>=4: full four maps
+      - schema==3: {play,bet,outcome}, coins={}
+      - schema==2: {play,bet}, outcome={}, coins={}
+      - schema==1: {play=<flat>}, bet={}, outcome={}, coins={}
     """
     with open(path, "r", encoding="utf-8") as f:
         payload = json.load(f)
     schema = int(payload.get("schema", 1))
-    stats = payload.get("stats", {})
-    if schema >= 2 and isinstance(stats, dict) and "play" in stats and "bet" in stats:
-        play_map = stats.get("play", {}) or {}
-        bet_map = stats.get("bet", {}) or {}
-        return {"play": play_map, "bet": bet_map}
-    else:
-        # legacy shard (v1): interpret as 'play' only
-        return {"play": stats, "bet": {}}
+    stats = payload.get("stats", {}) or {}
+    if schema >= 4:
+        return {
+            "play": stats.get("play", {}) or {},
+            "bet": stats.get("bet", {}) or {},
+            "outcome": stats.get("outcome", {}) or {},
+            "coins": stats.get("coins", {}) or {},
+        }
+    if schema == 3:
+        return {"play": stats.get("play", {}) or {}, "bet": stats.get("bet", {}) or {}, "outcome": stats.get("outcome", {}) or {}, "coins": {}}
+    if schema == 2:
+        return {"play": stats.get("play", {}) or {}, "bet": stats.get("bet", {}) or {}, "outcome": {}, "coins": {}}
+    # legacy v1
+    return {"play": stats, "bet": {}, "outcome": {}, "coins": {}}
+
+
 
 def aggregate_card_outcomes(shards_dir: str, *, kind: str = "play") -> Dict[str, Dict[str, float]]:
     """
@@ -297,6 +430,77 @@ def aggregate_card_outcomes(shards_dir: str, *, kind: str = "play") -> Dict[str,
             "winrate_eval_percent": winrate_eval_percent,
         }
     return result
+
+def aggregate_outcomes(shards_dir: str) -> Dict[str, Dict[str, float]]:
+    """
+    Merge 'outcome' shards and compute:
+      wins, losses, wins_by_concede, losses_by_concede,
+      plays_total, winrate_percent,
+      concede_win_percent_of_total, concede_win_percent_of_wins
+    """
+    merged: Dict[str, Dict[str, int]] = {}
+
+    for name in os.listdir(shards_dir):
+        if not name.startswith("card_outcomes_shard_") or not name.endswith(".json"):
+            continue
+        path = os.path.join(shards_dir, name)
+        try:
+            shard = _read_shard(path)
+            src = shard.get("outcome", {}) or {}
+            for k, s in src.items():
+                d = merged.setdefault(k, _empty_outcome_stats())
+                for fld in d.keys():
+                    d[fld] += int(s.get(fld, 0))
+        except Exception:
+            continue
+
+    out: Dict[str, Dict[str, float]] = {}
+    for card, s in merged.items():
+        wins = int(s.get("wins", 0))
+        losses = int(s.get("losses", 0))
+        w_conc = int(s.get("wins_by_concede", 0))
+        l_conc = int(s.get("losses_by_concede", 0))
+        total = wins + losses
+
+        winrate_percent = (100.0 * wins / total) if total > 0 else 0.0
+        concede_win_percent_of_wins  = (100.0 * w_conc / wins) if wins > 0 else 0.0
+        concede_win_percent_of_total = (100.0 * w_conc / total) if total > 0 else 0.0
+
+        out[card] = {
+            "wins": float(wins),
+            "losses": float(losses),
+            "wins_by_concede": float(w_conc),
+            "losses_by_concede": float(l_conc),
+            "plays_total": float(total),
+            "winrate_percent": winrate_percent,
+            "concede_win_percent_of_wins": concede_win_percent_of_wins,
+            "concede_win_percent_of_total": concede_win_percent_of_total,
+        }
+    return out
+
+def aggregate_new_coins(shards_dir: str) -> Dict[str, Dict[str, int]]:
+    """
+    Merge all 'coins' maps from shards.
+    Returns: { "1": {src: total, ...}, "2": {...}, ... }  (round keys as strings)
+    Missing categories default to 0 so stacks are aligned.
+    """
+    merged: Dict[str, Dict[str, int]] = {}
+    for name in os.listdir(shards_dir):
+        if not name.startswith("card_outcomes_shard_") or not name.endswith(".json"):
+            continue
+        path = os.path.join(shards_dir, name)
+        try:
+            shard = _read_shard(path)
+            coins_map = shard.get("coins", {}) or {}
+            for rkey, catmap in coins_map.items():
+                dst = merged.setdefault(rkey, _empty_coins_round_stats())
+                for src in _ALLOWED_COIN_SOURCES:
+                    dst[src] += int(catmap.get(src, 0))
+        except Exception:
+            continue
+    return merged
+
+
 
 def aggregate_both(shards_dir: str) -> Tuple[Dict[str, Dict[str, float]], Dict[str, Dict[str, float]]]:
     """Convenience: returns (play_metrics, bet_metrics)."""
@@ -388,6 +592,73 @@ def _save_empty(out_png: str, msg: str = "No data") -> None:
     os.makedirs(os.path.dirname(out_png) or ".", exist_ok=True)
     plt.savefig(out_png, dpi=160, bbox_inches="tight")
     plt.close()
+
+
+
+def write_card_outcome_winrates_csv(out_csv: str, agg_outcome: Dict[str, Dict[str, float]]) -> None:
+    cols = [
+        "card_key", "wins", "losses", "plays_total",
+        "wins_by_concede", "losses_by_concede",
+        "winrate_percent",
+        "concede_win_percent_of_wins",
+        "concede_win_percent_of_total",
+    ]
+    items = _sorted_items_by_type_number(agg_outcome)
+    with open(out_csv, "w", newline="", encoding="utf-8") as f:
+        w = csv.writer(f)
+        w.writerow(cols)
+        for card, row in items:
+            w.writerow([
+                card,
+                f"{row.get('wins', 0.0):.0f}",
+                f"{row.get('losses', 0.0):.0f}",
+                f"{row.get('plays_total', 0.0):.0f}",
+                f"{row.get('wins_by_concede', 0.0):.0f}",
+                f"{row.get('losses_by_concede', 0.0):.0f}",
+                f"{row.get('winrate_percent', 0.0):.3f}",
+                f"{row.get('concede_win_percent_of_wins', 0.0):.3f}",
+                f"{row.get('concede_win_percent_of_total', 0.0):.3f}",
+            ])
+
+
+def plot_outcome_winrates_with_concede(out_png: str, agg_outcome: Dict[str, Dict[str, float]], top_k: Optional[int] = None) -> None:
+    """
+    One stacked bar per card:
+      bottom segment = % of plays that were wins *via concession*,
+      top segment    = % of plays that were wins *not via concession*.
+    Total bar height = overall win-rate (%).
+    """
+    items = _sorted_items_by_type_number(agg_outcome)
+    # keep only cards with at least one play
+    items = [kv for kv in items if kv[1].get("plays_total", 0.0) > 0.0]
+    if top_k:
+        items = items[:top_k]
+    if not items:
+        return _save_empty(out_png, "No outcomes logged")
+
+    cards = [k for k, _ in items]
+    winrate = [v["winrate_percent"] for _, v in items]
+    concede_part = [v["concede_win_percent_of_total"] for _, v in items]
+    non_concede_part = [wr - cp for wr, cp in zip(winrate, concede_part)]
+
+    import numpy as np
+    x = np.arange(len(cards))
+
+    plt.figure(figsize=(max(8, len(cards) * 0.45), 6))
+    plt.bar(x, concede_part, label="Wins via concession")
+    plt.bar(x, non_concede_part, bottom=concede_part, label="Wins (non-concession)")
+    plt.ylabel("Win rate (%)")
+    plt.title("Actual win rate per card (stacked by concession)")
+    plt.xticks(x, cards, rotation=45, ha="right")
+    plt.legend()
+    # value labels for total winrate
+    for i, wr in enumerate(winrate):
+        plt.text(i, wr + 1.0, f"{wr:.1f}%", ha="center", va="bottom", fontsize=8)
+    plt.tight_layout()
+    os.makedirs(os.path.dirname(out_png) or ".", exist_ok=True)
+    plt.savefig(out_png, dpi=160, bbox_inches="tight")
+    plt.close()
+
 
 # --- PLAY: per-play beats & losses ---
 def plot_play_per_play_beats_losses(out_png: str, agg_play: dict, top_k: int | None = None) -> None:
@@ -575,3 +846,77 @@ def plot_bet_eval_winrate(out_png: str, agg_bet: dict, top_k: int | None = None)
     for i, h in enumerate(heights): plt.text(i, h + 1.0, f"{h:.1f}%", ha="center", va="bottom", fontsize=8)
     plt.xticks(x, cards, rotation=45, ha="right"); plt.tight_layout()
     os.makedirs(os.path.dirname(out_png) or ".", exist_ok=True); plt.savefig(out_png, dpi=160); plt.close()
+
+
+def plot_new_coins_per_round_stacked(
+    out_png: str,
+    coins_by_round: Dict[str, Dict[str, float]],
+    *,
+    rounds: Optional[List[int]] = None,
+    title_prefix: str = "",   # e.g., "Average " or "Total "
+) -> None:
+    if not coins_by_round:
+        return _save_empty(out_png, "No coin-minting data")
+
+    # Order rounds
+    if rounds is None:
+        rounds = sorted(int(r) for r in coins_by_round.keys())
+    labels = [str(r) for r in rounds]
+
+    categories = [
+        "total_domination",
+        "favor_payout_last",
+        "favor_payout_richest",
+        "uneven_bet_add1",
+        "uneven_bet_bankCover",
+    ]
+
+    import numpy as np
+    data = []
+    for src in categories:
+        row = [float(coins_by_round.get(str(r), {}).get(src, 0.0)) for r in rounds]
+        data.append(row)
+    data = np.array(data)  # shape (C, R)
+
+    if float(data.sum()) == 0.0:
+        return _save_empty(out_png, "No coin-minting amounts recorded")
+
+    # Choose label formatting: ints for totals, 2 decimals for averages
+    is_avg = title_prefix.lower().startswith("average")
+    def _fmt(v: float) -> str:
+        if not is_avg:
+            return f"{int(round(v))}"
+        # small values keep one or two decimals
+        return f"{v:.2f}" if v < 10 else f"{v:.1f}"
+
+    x = np.arange(len(rounds))
+    plt.figure(figsize=(max(8, len(rounds) * 1.0), 6))
+
+    # Draw stacks and annotate each segment
+    bottoms = np.zeros(len(rounds))
+    for i, src in enumerate(categories):
+        bars = plt.bar(x, data[i], bottom=bottoms, label=src.replace("_", " "))
+        # annotate each segment (skip zero-height)
+        for j, rect in enumerate(bars):
+            h = rect.get_height()
+            if h <= 0:
+                continue
+            y_center = rect.get_y() + h / 2.0
+            plt.text(
+                rect.get_x() + rect.get_width() / 2.0,
+                y_center,
+                _fmt(h),
+                ha="center",
+                va="center",
+                fontsize=8,
+            )
+        bottoms = bottoms + data[i]
+
+    plt.ylabel("New coins" + (" (avg per game)" if is_avg else ""))
+    plt.title(f"{title_prefix}new coins by round (stacked by source)".strip())
+    plt.xticks(x, labels)
+    plt.legend()
+    plt.tight_layout()
+    os.makedirs(os.path.dirname(out_png) or ".", exist_ok=True)
+    plt.savefig(out_png, dpi=160, bbox_inches="tight")
+    plt.close()

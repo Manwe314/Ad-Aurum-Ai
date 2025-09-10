@@ -1,6 +1,7 @@
 from .models import GladiatorType
 from colorama import Fore, Back, Style
-from .globals import GAME_ENGINE_PIRINTS, LOGGER, LOGGING
+from .globals import GAME_ENGINE_PIRINTS, LOGGER, LOGGING, PARALEL_LOGGING
+from Analytics.analytics_logger import get_card_logger, COIN_SOURCES
 
 def rel_bonus(type1, type2, chain, multiplier):
     idx1 = chain.index(type1)
@@ -21,6 +22,13 @@ def resolve_battles(battles, board, players):
     two_x_chain = [GladiatorType.A, GladiatorType.C, GladiatorType.E, GladiatorType.B, GladiatorType.D]
     for battle in battles:
         if battle.card1 is None or battle.card2 is None or battle.winner is not None:
+            if PARALEL_LOGGING:
+                if battle.winner is battle.player1:
+                    get_card_logger().log_card_outcome(card_key=repr(battle.card1), won=True, opponent_conceded=True, lost_by_concede=False)
+                    get_card_logger().log_card_outcome(card_key=repr(battle.card2), won=False, opponent_conceded=False, lost_by_concede=True)
+                else:
+                    get_card_logger().log_card_outcome(card_key=repr(battle.card2), won=True, opponent_conceded=True, lost_by_concede=False)
+                    get_card_logger().log_card_outcome(card_key=repr(battle.card1), won=False, opponent_conceded=False, lost_by_concede=True)
             continue
         if GAME_ENGINE_PIRINTS:
             print(Back.LIGHTRED_EX + Fore.LIGHTBLACK_EX + f"\nResolving {battle}:" + Style.RESET_ALL)
@@ -55,11 +63,18 @@ def resolve_battles(battles, board, players):
             if GAME_ENGINE_PIRINTS:
                 print("Stalemate. No one wins this battle.")
             battle.winner = None
+        if PARALEL_LOGGING:
+                if battle.winner is battle.player1:
+                    get_card_logger().log_card_outcome(card_key=repr(battle.card1), won=True, opponent_conceded=False, lost_by_concede=False)
+                    get_card_logger().log_card_outcome(card_key=repr(battle.card2), won=False, opponent_conceded=False, lost_by_concede=False)
+                else:
+                    get_card_logger().log_card_outcome(card_key=repr(battle.card2), won=True, opponent_conceded=False, lost_by_concede=False)
+                    get_card_logger().log_card_outcome(card_key=repr(battle.card1), won=False, opponent_conceded=False, lost_by_concede=False)
         if LOGGING:
             LOGGER.log_cat("battle", f"Resolving: {battle.player1.name} With {battle.card1} power {str1} Vs {battle.player2.name} with {battle.card2} power {str2}")
 
 
-def correct_bets(battle):
+def correct_bets(battle, round_num):
     if battle.winner is None:
         battle.player1.front_coins += battle.bet1
         battle.player2.front_coins += battle.bet2
@@ -69,16 +84,20 @@ def correct_bets(battle):
         battle.player1.front_coins += battle.bet1 + battle.bet2
         if battle.bet1 > battle.bet2 and battle.fight_regardless:
             battle.player1.front_coins += (battle.bet1 - battle.bet2)
+            if PARALEL_LOGGING:
+                get_card_logger().log_new_coins(round_index=round_num, source=COIN_SOURCES['uneven_bet_bankCover'], amount=(battle.bet1 - battle.bet2))
         if LOGGING:
             LOGGER.log_cat("battle", f"Battle won. Gaining {battle.bet1 + battle.bet2 + (battle.bet1 - battle.bet2 if battle.bet1 > battle.bet2 and battle.fight_regardless else 0)} coins.", player=battle.player1.name, stats=True, player_obj=battle.player1)
     if battle.winner == battle.player2:
         battle.player2.front_coins += battle.bet1 + battle.bet2
         if battle.bet2 > battle.bet1 and battle.fight_regardless:
             battle.player2.front_coins += (battle.bet2 - battle.bet1)
+            if PARALEL_LOGGING:
+                get_card_logger().log_new_coins(round_index=round_num, source=COIN_SOURCES['uneven_bet_bankCover'], amount=(battle.bet2 - battle.bet1))
         if LOGGING:
             LOGGER.log_cat("battle", f"Battle won. Gaining {battle.bet1 + battle.bet2 + (battle.bet1 - battle.bet2 if battle.bet1 > battle.bet2 and battle.fight_regardless else 0)} coins.", player=battle.player2.name, stats=True, player_obj=battle.player2)
 
-def give_total_domination(player, board):
+def give_total_domination(player, board, round_num):
     max_bet = 0
     second_max_bet = 0
     for g_type, entries in board.bets.items():
@@ -94,4 +113,6 @@ def give_total_domination(player, board):
         print(Back.BLUE +  f"{player.name} achieves total domination! Gains {second_max_bet} coins." + Style.RESET_ALL)
     if LOGGING:
         LOGGER.log_cat("success", f"Achieves total domination! Gains {second_max_bet} coins.", player=player.name)
+    if PARALEL_LOGGING:
+        get_card_logger().log_new_coins(round_index=round_num, source=COIN_SOURCES['total_domination'], amount=second_max_bet)
     player.front_coins += second_max_bet

@@ -1,0 +1,13 @@
+{
+  "traits": {
+    "aggressiveness": 50,
+    "risk_tolerance": 50,
+    "tempo": 50,
+    "bluffiness": 50,
+    "stubbornness": 50,
+    "domination_drive": 50,
+    "herding": 50,
+    "ev_adherence": 50,
+    "exploration": 0.5
+  }
+}

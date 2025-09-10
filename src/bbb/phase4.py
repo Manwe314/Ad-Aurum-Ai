@@ -2,8 +2,8 @@ from .decisions import player_assign_cards_and_bets, player_additional_battle_be
 from .combat import resolve_battles, correct_bets, give_total_domination
 from .brains.base import PlayerBrain
 from colorama import Fore, Back, Style
-from .globals import GAME_ENGINE_PIRINTS, LOGGER, LOGGING
-
+from .globals import GAME_ENGINE_PIRINTS, LOGGER, LOGGING, PARALEL_LOGGING
+from Analytics.analytics_logger import get_card_logger, COIN_SOURCES
 def equalize_all_battles(battles, players, board, round_number, battle_phase_index):
     """
     For each battle needing equalization, ask the short bettor's brain whether to
@@ -124,6 +124,8 @@ def equalize_all_battles(battles, players, board, round_number, battle_phase_ind
                     print(Back.RED + Fore.WHITE +  f"{acting.name} fights with bank support (1)." + Style.RESET_ALL)
                 if LOGGING:
                     LOGGER.log_cat("warn", f"Fights with bank support (1).", player=acting.name)
+                if PARALEL_LOGGING:
+                    get_card_logger().log_new_coins(round_index=round_number, source=COIN_SOURCES['uneven_bet_add1'], amount=1)
                 if acting is battle.player2:
                     battle.bet2 += 1
                 else:
@@ -147,8 +149,8 @@ def play_battle_phase(players, battles, board, round_num, battle_index):
         if player.battles[0].winner == player and ((player.battles[0].player1 == player and player.battles[0].bet1 != 0) or player.battles[0].player2 == player and player.battles[0].bet2 != 0):
             if player.battles[1].winner == player and ((player.battles[1].player1 == player and player.battles[1].bet1 != 0) or player.battles[1].player2 == player and player.battles[1].bet2 != 0):
                 if player.battles[2].winner == player and ((player.battles[2].player1 == player and player.battles[2].bet1 != 0) or player.battles[2].player2 == player and player.battles[2].bet2 != 0):
-                    give_total_domination(player, board)
+                    give_total_domination(player, board, round_num)
 
     for battle in battles:
-        correct_bets(battle)
+        correct_bets(battle, round_num)
         battle.reset_battle()

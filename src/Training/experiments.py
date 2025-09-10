@@ -43,6 +43,7 @@ try:
         GAME_ENGINE_PIRINTS,
         LOGGER,
         LOGGING,
+        PARALEL_LOGGING
     )
 except Exception:
     ADDITIONAL_INFO = ""
@@ -76,7 +77,7 @@ STARTING_COINS: int = 10
 TIE_VALUE: float = 0.5
 
 # exploration constant used in experiments (tracked and opponents)
-EXPLORATION_CONST: int = 2
+EXPLORATION_CONST: int = 0.5
 
 # delta scoring: score = mean_win_rate - STD_PENALTY * std_across_strategies
 STD_PENALTY: float = 0.33
@@ -272,7 +273,7 @@ def _play_one_full_game(
         determine_round_winner(players, board)
 
         # Phase 6: cleanup, eval favored factions, rotate seating
-        evaluate_favored_factions(players)
+        evaluate_favored_factions(players, round_num)
         players = _rotate_players(players)
 
     for p in players:
@@ -323,7 +324,7 @@ def run_alpha(
     """
     Alpha: run X games with fixed opponents. Tracked player at tracked_index.
     Opponents must be 3 entries (P1..P4 are filled accordingly).
-    Tracked player is always the baseline (50s, exploration=2).
+    Tracked player is always the baseline (50s, exploration=0.5).
     """
     assert len(opponent_traits) == 3, "Provide traits for exactly 3 opponents."
     # Build the 4-seat trait array in seating order with tracked seat at tracked_index
@@ -595,6 +596,8 @@ def run_delta_parallel(
       - For CPU-bound sims, processes beat threads (GIL).
       - Disable or isolate logging; multiple processes writing the same file can clash.
     """
+    global LOGGING, PARALEL_LOGGING
+    LOGGING = PARALEL_LOGGING = False  # disable logging in workers
     if strategies is None:
         strategies = list(DEFAULT_DELTA_STRATEGIES)
 
