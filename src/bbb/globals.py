@@ -17,7 +17,7 @@ GAME_ENGINE_PIRINTS = False # set to True to enable debug prints
 
 LOGGING = False # set to False to disable logging
 
-PARALEL_LOGGING = True # set to True to enable logging in parallel games
+PARALEL_LOGGING = False # set to True to enable logging in parallel games
 
 
 LOGGER = HtmlLogger(path="./game_report.html", title="Game Report")
