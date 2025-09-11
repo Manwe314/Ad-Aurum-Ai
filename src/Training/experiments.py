@@ -43,7 +43,8 @@ try:
         GAME_ENGINE_PIRINTS,
         LOGGER,
         LOGGING,
-        PARALEL_LOGGING
+        PARALEL_LOGGING,
+        WW_VARS
     )
 except Exception:
     ADDITIONAL_INFO = ""
@@ -51,6 +52,7 @@ except Exception:
     GAME_ENGINE_PIRINTS = False
     LOGGING = False
     LOGGER = None
+    WW_VARS = {}
 
 # ---------------------------------------------------------------------
 # Experiment configuration (tweak freely)
@@ -538,12 +540,10 @@ def _gamma_worker(args) -> "GammaResult":
     if psutil:
         p = psutil.Process(os.getpid())
         try:
-            # Let the worker use ALL logical CPUs
             p.cpu_affinity(list(range(os.cpu_count() or 1)))
         except Exception:
             pass
         try:
-            # Bump priority a notch (careful on shared machines)
             if os.name == "nt":
                 if CPU_NORMAL:
                     p.nice(psutil.NORMAL_PRIORITY_CLASS)
@@ -554,19 +554,25 @@ def _gamma_worker(args) -> "GammaResult":
         except Exception:
             pass
 
-    """
-    Separate top-level function so it's picklable by multiprocessing.
-    Runs a single Gamma with provided parameters.
-    """
-    (strategy,
-     randomizations,
-     games_per_alpha,
-     cycles_per_position,
-     num_battles,
-     starting_coins,
-     seed) = args
+    (
+        strategy,
+        randomizations,
+        games_per_alpha,
+        cycles_per_position,
+        num_battles,
+        starting_coins,
+        seed,
+        opp_weights,          # <-- NEW
+    ) = args
 
-    # IMPORTANT: we call the existing run_gamma here
+    # --- set opponents' weights for THIS process only
+    try:
+        if opp_weights:
+            WW_VARS.clear()
+            WW_VARS.update(opp_weights)
+    except Exception:
+        pass
+
     return run_gamma(
         strategy=strategy,
         randomizations=randomizations,
@@ -576,6 +582,7 @@ def _gamma_worker(args) -> "GammaResult":
         starting_coins=starting_coins,
         seed=seed,
     )
+
 
 def run_delta_parallel(
     *,
@@ -587,7 +594,8 @@ def run_delta_parallel(
     starting_coins: int = STARTING_COINS,
     seed: int = BASE_SEED,
     std_penalty: float = STD_PENALTY,
-    workers: Optional[int] = None,   # X: how many processes (None -> auto)
+    workers: Optional[int] = None,
+    opp_pool: Optional[Sequence[Dict[str, float]]] = None,   # <-- NEW
 ) -> DeltaResult:
     """
     Parallel delta: run one Gamma per strategy in separate processes.
@@ -611,6 +619,9 @@ def run_delta_parallel(
     tasks = []
     for strat in strategies:
         s = parent_rng.randint(0, 2**31 - 1)
+        opp_w = None
+        if opp_pool:
+            opp_w = dict(parent_rng.choice(list(opp_pool)))  # pick one for this strategy
         tasks.append((
             strat,
             randomizations,
@@ -619,6 +630,7 @@ def run_delta_parallel(
             num_battles,
             starting_coins,
             s,
+            opp_w,
         ))
 
     # launch workers

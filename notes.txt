@@ -6,3 +6,22 @@ anti overfitting measures
 best model evolution steps
 
 --group {traits} 
+
+
+broad analisis 
+python -m Analytics.broad_analytics --points 10 --repeats 1 --games 15 --starting-coins 10 --num-battles 3 --workers 12 --chunk-size 200 --seed 123 --outcsv src/Analytics/analytics_out/broad_samples.csv
+
+trait itteration:
+python -m Analytics.simple_analitics iterate-trait --traits src/Analytics/single_trait.json --target-trait aggressiveness --step 20 --runs 5 --games 60 --starting-coins 10 --num-battles 3 --workers 12 --chunk-size 5 --seed 42 --model-name gen5 --outdir src/Analytics/analytics_out
+
+coins per round:
+python -m Analytics.simple_analitics coins-per-round --traits src/Analytics/traits.json --games 120 --starting-coins 10 --workers 12 --outdir src/Analytics/analytics_out --chunk-size 10 --model-name gen4
+
+simple single game:
+python -m bbb.cli 
+
+run training models delta function:
+python -m Training.run_delta 
+
+singular Baeysian optimization
+python -m Training.bo_train 
