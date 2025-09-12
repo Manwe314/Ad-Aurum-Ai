@@ -11,7 +11,7 @@ from skopt.utils import use_named_args
 
 # reuse your training constants
 from bbb.globals import WW_VARS_TRAINING
-from bbb.src.experiments import run_delta_parallel  # adjust import path if needed
+from Training.experiments import run_delta_parallel  # adjust import path if needed
 
 # -------- Search space (copied from your trainer) ----------
 # Build bounds from current WW_VARS_TRAINING keys
@@ -25,10 +25,7 @@ def load_pool(path: str) -> List[Dict[str, float]]:
         return []
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
-    if isinstance(data, dict) and "weights" in data:  # support older format
-        return [data["weights"]]
-    if isinstance(data, list):
-        return [dict(x) for x in data]
+        return data
     return []
 
 def save_pool(path: str, pool: Sequence[Dict[str, float]]) -> None:
@@ -92,7 +89,7 @@ def bo_once_against_pool(
                 num_battles=num_battles,
                 starting_coins=starting_coins,
                 workers=workers,
-                opp_pool=[opp_w],  # pick this one in workers
+                opp_weights= opp_w,  # pick this one in workers
             )
             scores.append(float(res.score))
         mean_score = sum(scores) / len(scores)

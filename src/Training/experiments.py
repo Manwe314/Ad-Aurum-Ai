@@ -562,7 +562,7 @@ def _gamma_worker(args) -> "GammaResult":
         num_battles,
         starting_coins,
         seed,
-        opp_weights,          # <-- NEW
+        opp_weights,
     ) = args
 
     # --- set opponents' weights for THIS process only
@@ -595,7 +595,7 @@ def run_delta_parallel(
     seed: int = BASE_SEED,
     std_penalty: float = STD_PENALTY,
     workers: Optional[int] = None,
-    opp_pool: Optional[Sequence[Dict[str, float]]] = None,   # <-- NEW
+    opp_weights: Optional[Dict[str, float]] = None,
 ) -> DeltaResult:
     """
     Parallel delta: run one Gamma per strategy in separate processes.
@@ -619,9 +619,6 @@ def run_delta_parallel(
     tasks = []
     for strat in strategies:
         s = parent_rng.randint(0, 2**31 - 1)
-        opp_w = None
-        if opp_pool:
-            opp_w = dict(parent_rng.choice(list(opp_pool)))  # pick one for this strategy
         tasks.append((
             strat,
             randomizations,
@@ -630,7 +627,7 @@ def run_delta_parallel(
             num_battles,
             starting_coins,
             s,
-            opp_w,
+            opp_weights,
         ))
 
     # launch workers

@@ -25,3 +25,6 @@ python -m Training.run_delta
 
 singular Baeysian optimization
 python -m Training.bo_train 
+
+Itterative Baeysian optimization
+python -m Training.train_pool --pool src/Training/weights_pool.json --iters 1 --pool-sample 2 --n-calls 10 --n-init 4 --seed 42 --randomizations 1 --games-per-alpha 1 --cycles-per-position 1 --workers 12

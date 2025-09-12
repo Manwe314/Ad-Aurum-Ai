@@ -53,21 +53,38 @@ def _traits_field_names() -> set:
 
 def _vec_to_traits(vec9: np.ndarray, round_to: int = 5) -> Traits:
     """
-    Map 9 floats in [0,1) -> integer trait values 0..100 (rounded to nearest round_to).
+    Map 9 floats in [0,1] -> integer trait values.
+      - All traits except 'exploration' are in 0..100 and rounded to nearest `round_to` (default 5).
+      - 'exploration' is capped to 0..10 and rounded to nearest integer.
     """
+    if len(vec9) != len(TRAIT_ORDER):
+        raise ValueError(f"vec9 must have length {len(TRAIT_ORDER)}; got {len(vec9)}")
+
     vals: Dict[str, int] = {}
     for i, name in enumerate(TRAIT_ORDER):
-        # scale
-        v = int(round(float(vec9[i]) * 100.0))
-        # clamp & round
-        v = max(0, min(100, v))
-        if round_to and round_to > 1:
-            v = int(round(v / round_to) * round_to)
+        x = float(vec9[i])
+        # clamp input to [0,1]
+        if x < 0.0: x = 0.0
+        if x > 1.0: x = 1.0
+
+        if name == "exploration":
+            # scale to 0..10, round to nearest int, clamp
+            v = int(round(x * 10.0))
+            v = max(0, min(10, v))
+        else:
+            # scale to 0..100, round to nearest `round_to`, clamp
+            v = int(round(x * 100.0))
             v = max(0, min(100, v))
+            if round_to and round_to > 1:
+                v = int(round(v / round_to) * round_to)
+                v = max(0, min(100, v))
+
         vals[name] = v
+
     # ensure compatibility if Traits has extra/missing fields
     payload = {k: vals.get(k, 50) for k in _traits_field_names()}
     return Traits(**payload)  # type: ignore
+
 
 # ---------- Sobol sampling ----------------------------------------------------
 
